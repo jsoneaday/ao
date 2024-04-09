@@ -2,7 +2,6 @@ use ao_common::errors::QueryGatewayErrors;
 use ao_common::models::gql_models::{Node, TransactionConnectionSchema};
 use ao_common::models::shared_models::Tag;
 use async_trait::async_trait;
-use once_cell::sync::OnceCell;
 use serde::Serialize;
 use ao_common::arweave::InternalArweave;
 use crate::err::SchedulerErrors;
@@ -181,16 +180,6 @@ pub struct SchedulerResult {
     pub url: String,
     pub ttl: u64,
     pub owner: String
-}
-
-pub const DEFAULT_TTL: u64 = 10;
-
-static GATEWAY: OnceCell<Gateway> = OnceCell::new();
-/// If you need readonly querying, pass an empty path
-pub fn get_gateway<'a>(wallet_path: &'a str, gateway_url: &'a str) -> &'a Gateway {
-    GATEWAY.get_or_init(|| {
-        Gateway::new(wallet_path, gateway_url)
-    })
 }
 
 #[cfg(test)]

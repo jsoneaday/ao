@@ -1,3 +1,5 @@
+use std::env::VarError;
+
 use crate::{client::{gateway::Gateway, in_memory::LocalLruCache, scheduler::CheckForRedirect}, locate::Locate, raw::Raw, validate::Validate};
 
 const DEFAULT_GATEWAY_URL: &str = "https://arweave.net";
@@ -20,8 +22,17 @@ const DEFAULT_GATEWAY_URL: &str = "https://arweave.net";
  *
  * @param {ConnectParams} [params]
  */
-pub fn connect(cache_size: u64, wallet_path: &str, gateway_url: Option<&str>, follow_redirects: Option<bool>) -> ConnectReturn {
-    let _gateway_url = if let Some(gateway_url) = gateway_url { gateway_url } else { DEFAULT_GATEWAY_URL };
+pub fn connect(cache_size: u64, wallet_path: &str, gateway_url: Result<String, VarError>, follow_redirects: Option<bool>) -> ConnectReturn {
+    let _gateway_url = if let Ok(gateway_url) = gateway_url { 
+        if gateway_url.is_empty() {
+            DEFAULT_GATEWAY_URL.to_string()
+        } else {
+            gateway_url
+        }
+    } else { 
+        DEFAULT_GATEWAY_URL.to_string()
+    };
+    let _gateway_url = &_gateway_url;
     let _follow_redirects = if let Some(follow_redirects) = follow_redirects { follow_redirects } else { false };
 
     let check_for_redirect = CheckForRedirect;
