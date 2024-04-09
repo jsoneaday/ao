@@ -2,6 +2,7 @@ use ao_common::errors::QueryGatewayErrors;
 use ao_common::models::gql_models::{Node, TransactionConnectionSchema};
 use ao_common::models::shared_models::Tag;
 use async_trait::async_trait;
+use once_cell::sync::OnceCell;
 use serde::Serialize;
 use ao_common::arweave::InternalArweave;
 use crate::err::SchedulerErrors;
@@ -136,8 +137,7 @@ impl GatewayMaker for Gateway {
 
 impl Gateway {
     /// If you need readonly querying, pass an empty path
-    #[allow(unused)]
-    fn new(wallet_path: &str, gateway_url: &str) -> Self {
+    pub fn new(wallet_path: &str, gateway_url: &str) -> Self {
         Gateway { arweave: InternalArweave::new(wallet_path), gateway_url: gateway_url.to_string() }
     }
 
@@ -184,6 +184,14 @@ pub struct SchedulerResult {
 }
 
 pub const DEFAULT_TTL: u64 = 10;
+
+static GATEWAY: OnceCell<Gateway> = OnceCell::new();
+/// If you need readonly querying, pass an empty path
+pub fn get_gateway<'a>(wallet_path: &'a str, gateway_url: &'a str) -> &'a Gateway {
+    GATEWAY.get_or_init(|| {
+        Gateway::new(wallet_path, gateway_url)
+    })
+}
 
 #[cfg(test)]
 mod tests {

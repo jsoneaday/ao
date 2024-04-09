@@ -1,11 +1,22 @@
-use crate::{client::{gateway::{GatewayMaker, SchedulerResult}, in_memory::{Cacher, UrlOwner}, scheduler::CheckForRedirectFn}, err::SchedulerErrors};
+use crate::{client::{gateway::{GatewayMaker, SchedulerResult}, in_memory::{Cacher, UrlOwner}, scheduler::CheckForRedirectMaker}, err::SchedulerErrors};
 use async_trait::async_trait;
 
-pub struct Locate<C: Cacher, G: GatewayMaker, R: CheckForRedirectFn> {
+pub struct Locate<C: Cacher, G: GatewayMaker, R: CheckForRedirectMaker> {
   gateway: G,
   cache: C,
   follow_redirects: bool,
   check_for_redirect: R
+}
+
+impl<C: Cacher, G: GatewayMaker, R: CheckForRedirectMaker> Locate<C, G, R> {
+  pub fn new(gateway: G, cache: C, follow_redirects: bool, check_for_redirect: R) -> Self {
+    Locate {
+      gateway,
+      cache,
+      follow_redirects,
+      check_for_redirect
+    }
+  }
 }
 
 #[async_trait]
@@ -18,7 +29,7 @@ impl<C, G, R>  LocateMaker for Locate<C, G, R>
 where
     C: Cacher + std::marker::Send + std::marker::Sync,
     G: GatewayMaker + std::marker::Send + std::marker::Sync,
-    R: CheckForRedirectFn + std::marker::Send + std::marker::Sync {
+    R: CheckForRedirectMaker + std::marker::Send + std::marker::Sync {
   /**
    * Locate the scheduler for the given process.
    *
@@ -124,7 +135,7 @@ where
 
     struct MockCheckForRedirectLoadAndCacheIt;
     #[async_trait]
-    impl CheckForRedirectFn for MockCheckForRedirectLoadAndCacheIt {
+    impl CheckForRedirectMaker for MockCheckForRedirectLoadAndCacheIt {
       async fn check_for_redirect_with(&self, _url: &str, _process: &str) -> Result<String, SchedulerErrors> {
         unimplemented!()
       }
@@ -174,7 +185,7 @@ where
 
     struct MockCheckForRedirectServeCachedValue;
     #[async_trait]
-    impl CheckForRedirectFn for MockCheckForRedirectServeCachedValue {
+    impl CheckForRedirectMaker for MockCheckForRedirectServeCachedValue {
       async fn check_for_redirect_with(&self, _url: &str, _process: &str) -> Result<String, SchedulerErrors> {
         unimplemented!()
       }
@@ -230,7 +241,7 @@ where
 
     struct MockCheckForRedirectLoadRedirectedAndCacheIt;
     #[async_trait]
-    impl CheckForRedirectFn for MockCheckForRedirectLoadRedirectedAndCacheIt {
+    impl CheckForRedirectMaker for MockCheckForRedirectLoadRedirectedAndCacheIt {
       async fn check_for_redirect_with(&self, url: &str, process: &str) -> Result<String, SchedulerErrors> {
         assert!(process == PROCESS);
         assert!(url == DOMAIN);
@@ -289,7 +300,7 @@ where
 
     struct MockCheckForRedirectUseSchedulerHintAndSkipQueryingProcess;
     #[async_trait]
-    impl CheckForRedirectFn for MockCheckForRedirectUseSchedulerHintAndSkipQueryingProcess {
+    impl CheckForRedirectMaker for MockCheckForRedirectUseSchedulerHintAndSkipQueryingProcess {
       async fn check_for_redirect_with(&self, url: &str, process: &str) -> Result<String, SchedulerErrors> {
         assert!(process == PROCESS);
         assert!(url == DOMAIN);
@@ -347,7 +358,7 @@ where
 
     struct MockCheckForRedirectUseSchedulerHintAndCachedOwner;
     #[async_trait]
-    impl CheckForRedirectFn for MockCheckForRedirectUseSchedulerHintAndCachedOwner {
+    impl CheckForRedirectMaker for MockCheckForRedirectUseSchedulerHintAndCachedOwner {
       async fn check_for_redirect_with(&self, url: &str, process: &str) -> Result<String, SchedulerErrors> {
         assert!(process == PROCESS);
         assert!(url == DOMAIN);

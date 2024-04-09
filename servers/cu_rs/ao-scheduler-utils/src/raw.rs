@@ -6,6 +6,15 @@ pub struct Raw<C, G> {
     cache: C
 }
 
+impl<C: Cacher, G: GatewayMaker> Raw<C, G> {
+    pub fn new(gateway: G, cache: C) -> Self {
+        Self {
+            gateway,
+            cache
+        }
+    }
+}
+
 #[async_trait]
 pub trait RawMaker {
     async fn raw(&mut self, address: &str) -> Result<Option<SchedulerLocation>, SchedulerErrors>;

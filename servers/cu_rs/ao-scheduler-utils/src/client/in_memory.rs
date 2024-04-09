@@ -1,20 +1,17 @@
 use std::time::Duration;
 use async_trait::async_trait;
 use moka::{future::Cache, Expiry};
-use once_cell::sync::OnceCell;
 
 /// moka is internally thread safe, but requires cache to be cloned
 #[derive(Clone)]
 #[allow(unused)]
 pub struct LocalLruCache {
     internal_cache: Cache<String, (Expiration, UrlOwner)>,
-    internal_size: u64
 }
 
 impl LocalLruCache {
     pub fn new(size: u64) -> Self {
         Self {
-            internal_size: size,
             internal_cache: Cache::builder()
                 .max_capacity(size)
                 .expire_after(CacheExpiry)
@@ -101,14 +98,6 @@ impl Expiry<String, (Expiration, UrlOwner)> for CacheExpiry {
         let duration = value.0.as_duration();
         duration
     }
-}
-
-static CACHE: OnceCell<LocalLruCache> = OnceCell::new();
-pub fn get_cache() -> LocalLruCache {
-    let cache = CACHE.get_or_init(|| {
-        LocalLruCache::new(10)
-    });
-    cache.clone()
 }
 
 pub fn get_expiration_from_ms(ttl: u64) -> Expiration {

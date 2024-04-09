@@ -6,6 +6,15 @@ pub struct Validate<C: Cacher, G: GatewayMaker> {
     cache: C
 }
 
+impl<C: Cacher, G: GatewayMaker> Validate<C, G> {
+    pub fn new(gateway: G, cache: C) -> Self {
+        Self {
+            gateway,
+            cache
+        }
+    }
+}
+
 #[async_trait]
 pub trait ValidateMaker {
     async fn validate(&mut self, address: &str) -> Result<bool, SchedulerErrors>;
