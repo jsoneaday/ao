@@ -16,21 +16,21 @@ pub struct InternalArweave {
 }
 
 impl InternalArweave {
-    pub fn new(keypair_path: &str) -> Self {
+    pub fn new(keypair_path: &str, gateway_url: &str) -> Self {
         InternalArweave {
-            internal_arweave: InternalArweave::create_wallet_client(keypair_path),
+            internal_arweave: InternalArweave::create_wallet_client(keypair_path, gateway_url),
             client: Client::new()
         }
     }
 
-    pub fn create_wallet_client(keypair_path: &str) -> Arweave {
+    pub fn create_wallet_client(keypair_path: &str, gateway_url: &str) -> Arweave {
         let arweave_builder = ArweaveBuilder::new();
         
         let mut path = PathBuf::new();
         path.push(keypair_path);
         arweave_builder
             .keypair_path(path)
-            .base_url(Url::parse("https://arweave.net").unwrap())
+            .base_url(Url::parse(gateway_url).unwrap())
             .build().unwrap()
         // arweave.upload_file_from_path(file_path, additional_tags, fee);
     }
@@ -113,7 +113,7 @@ impl InternalArweave {
     * @param {Env2} env
     * @returns {LoadTransactionData}
     */
-    pub async fn load_tx_data_with<'a>(&'a self, gateway_url: &'a str, id: &'a str) -> Result<Response, Error> {
+    pub async fn load_tx_data_with(&self, gateway_url: &str, id: &str) -> Result<Response, Error> {
         let result = self.client.get(format!("{}/raw/{}", gateway_url, id)).send().await;
         match result {
             Ok(res) => Ok(res),
@@ -124,7 +124,7 @@ impl InternalArweave {
         }
     }
 
-    pub async fn query_gateway_with<'a, T: Serialize, U: for<'de> Deserialize<'de>>(&'a self, gateway_url: &'a str, query: &'a str, variables: T) -> 
+    pub async fn query_gateway_with<T: Serialize, U: for<'de> Deserialize<'de>>(&self, gateway_url: &str, query: &str, variables: T) -> 
         Result<U, QueryGatewayErrors> {        
         let result = self.client.post(format!("{}{}", gateway_url, "/graphql"))
             .headers(get_content_type_headers())
@@ -155,7 +155,7 @@ impl InternalArweave {
         }
     }
 
-    pub async fn upload_data_item_with<'a, U: for<'de> Deserialize<'de>>(&'a self, gateway_url: String, data_item: &DataItem) -> Result<U, Error> {
+    pub async fn upload_data_item_with<U: for<'de> Deserialize<'de>>(&self, gateway_url: String, data_item: &DataItem) -> Result<U, Error> {
         let result = self.client
             .post(format!("{}/tx/arweave", gateway_url))
             .headers(get_content_type_headers())

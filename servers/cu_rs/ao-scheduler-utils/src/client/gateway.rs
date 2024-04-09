@@ -137,7 +137,7 @@ impl GatewayMaker for Gateway {
 impl Gateway {
     /// If you need readonly querying, pass an empty path
     pub fn new(wallet_path: &str, gateway_url: &str) -> Self {
-        Gateway { arweave: InternalArweave::new(wallet_path), gateway_url: gateway_url.to_string() }
+        Gateway { arweave: InternalArweave::new(wallet_path, gateway_url), gateway_url: gateway_url.to_string() }
     }
 
     fn find_tag_value(name: &str, tags: &Vec<Tag>) -> String {
