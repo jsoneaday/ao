@@ -4,7 +4,6 @@ use ao_common::models::shared_models::Tag;
 use async_trait::async_trait;
 use serde::Serialize;
 use ao_common::arweave::InternalArweave;
-use once_cell::sync::OnceCell;
 use crate::err::SchedulerErrors;
 
 const URL_TAG: &str = "Url";
@@ -12,18 +11,19 @@ const TTL_TAG: &str = "Time-To-Live";
 const SCHEDULER_TAG: &str = "Scheduler";
 
 pub struct Gateway {
-    arweave: InternalArweave
+    arweave: InternalArweave,
+    gateway_url: String
 }
 
 #[async_trait]
 pub trait GatewayMaker {
-    async fn load_process_scheduler_with<'a>(&self, gateway_url: &'a str, process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors>;
-    async fn load_scheduler_with<'a>(&self, gateway_url: &'a str, scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>;
+    async fn load_process_scheduler<'a>(&self, process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors>;
+    async fn load_scheduler<'a>(&self, scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>;
 }
 
 #[async_trait]
 impl GatewayMaker for Gateway {
-    async fn load_process_scheduler_with<'a>(&self, gateway_url: &'a str, process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
+    async fn load_process_scheduler<'a>(&self, process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
         #[allow(non_snake_case)]
         let GET_TRANSACTIONS_QUERY = r#"
             query GetTransactions ($transactionIds: [ID!]!) {
@@ -41,7 +41,7 @@ impl GatewayMaker for Gateway {
         "#;
 
         let result = self.gateway_with::<TransactionIds, TransactionConnectionSchema>(
-            gateway_url, 
+            self.gateway_url.as_str(), 
             GET_TRANSACTIONS_QUERY, 
             TransactionIds { transaction_ids: vec![process_tx_id] }
         ).await;
@@ -56,7 +56,7 @@ impl GatewayMaker for Gateway {
                             let error = SchedulerErrors::new_tag_not_found("No 'Scheduler' tag found on process".to_string());
                             return Err(error);
                         }
-                        let load_scheduler = self.load_scheduler_with(gateway_url, &tag_val).await;
+                        let load_scheduler = self.load_scheduler(&tag_val).await;
                         match load_scheduler {
                             Ok(res) => Ok(res),
                             Err(e) => Err(e)
@@ -69,7 +69,7 @@ impl GatewayMaker for Gateway {
         }
     }
 
-    async fn load_scheduler_with<'a>(&self, gateway_url: &'a str, scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
+    async fn load_scheduler<'a>(&self, scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
         #[allow(non_snake_case)]
         let GET_SCHEDULER_LOCATION = r#"
             query GetSchedulerLocation ($owner: String!) {
@@ -95,7 +95,7 @@ impl GatewayMaker for Gateway {
             }
         "#;
 
-        let result = self.gateway_with::<WalletAddress, TransactionConnectionSchema>(gateway_url, GET_SCHEDULER_LOCATION, WalletAddress { owner: scheduler_wallet_address }).await;        
+        let result = self.gateway_with::<WalletAddress, TransactionConnectionSchema>(self.gateway_url.as_str(), GET_SCHEDULER_LOCATION, WalletAddress { owner: scheduler_wallet_address }).await;        
         match result {
             Ok(tx) => {
                 let node = if tx.data.transactions.edges.is_empty() { None } else { Some(tx.data.transactions.edges[0].node.clone()) };
@@ -136,8 +136,9 @@ impl GatewayMaker for Gateway {
 
 impl Gateway {
     /// If you need readonly querying, pass an empty path
-    fn new(wallet_path: &str) -> Self {
-        Gateway { arweave: InternalArweave::new(wallet_path) }
+    #[allow(unused)]
+    fn new(wallet_path: &str, gateway_url: &str) -> Self {
+        Gateway { arweave: InternalArweave::new(wallet_path), gateway_url: gateway_url.to_string() }
     }
 
     fn find_tag_value(name: &str, tags: &Vec<Tag>) -> String {
@@ -162,14 +163,6 @@ impl Gateway {
             Err(e) => Err(e)
         }
     }    
-}
-
-static GATEWAY: OnceCell<Gateway> = OnceCell::new();
-/// If you need readonly querying, pass an empty path
-pub fn get_gateway(wallet_path: &str) -> &Gateway {
-    GATEWAY.get_or_init(|| {
-        Gateway::new(wallet_path)
-    })
 }
 
 #[derive(Serialize)]
@@ -261,9 +254,9 @@ mod tests {
     async fn test_load_scheduler_with() {
         init();
 
-        let gateway = Gateway::new(WALLET_FILE_PATH);
+        let gateway = Gateway::new(WALLET_FILE_PATH, GATEWAY_URL);
         
-        let result = gateway.load_scheduler_with(GATEWAY_URL, SCHEDULER_WALLET_ADDRESS).await;
+        let result = gateway.load_scheduler(SCHEDULER_WALLET_ADDRESS).await;
         match result {
             Ok(scheduler) => assert!(scheduler.owner == SCHEDULER_WALLET_ADDRESS.to_string()),
             Err(e) => panic!("{:?}", e)
@@ -274,9 +267,9 @@ mod tests {
     async fn test_load_process_scheduler_with() {
         init();
 
-        let gateway = Gateway::new(WALLET_FILE_PATH);
+        let gateway = Gateway::new(WALLET_FILE_PATH, GATEWAY_URL);
         
-        let result = gateway.load_process_scheduler_with(GATEWAY_URL, "KHruEP5dOP_MgNHava2kEPleihEc915GlRRr3rQ5Jz4").await;
+        let result = gateway.load_process_scheduler("KHruEP5dOP_MgNHava2kEPleihEc915GlRRr3rQ5Jz4").await;
         match result {
             Ok(scheduler) => {
                 assert!(scheduler.owner == SCHEDULER_WALLET_ADDRESS.to_string());

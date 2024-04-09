@@ -7,3 +7,4 @@ pub mod validate;
 pub mod err;
 pub mod raw;
 pub mod locate;
+pub mod index_common;

@@ -1,29 +1,46 @@
 use crate::{client::{gateway::GatewayMaker, in_memory::Cacher}, err::SchedulerErrors};
+use async_trait::async_trait;
 
-/**
+pub struct Validate<C: Cacher, G: GatewayMaker> {
+    gateway: G,
+    cache: C
+}
+
+#[async_trait]
+pub trait ValidateMaker {
+    async fn validate(&mut self, address: &str) -> Result<bool, SchedulerErrors>;
+}
+
+#[async_trait]
+impl<C, G> ValidateMaker for Validate<C, G>
+where 
+    C: Cacher + std::marker::Send + std::marker::Sync,
+    G: GatewayMaker + std::marker::Send + std::marker::Sync {
+    /**
    * Validate whether the given wallet address is an ao Scheduler
    *
    * @param {string} address - the wallet address used by the Scheduler
    * @returns {<boolean>} whether the wallet address is Scheduler
    */
-pub async fn validate_with<C: Cacher, G: GatewayMaker>(mut cache: C, gateway: &G, gateway_url: &str, address: &str) -> Result<bool, SchedulerErrors> {
-    let cached = cache.get_by_owner_with(address).await;
-    if let Some(_) = cached {
-        return Ok(true);
-    }
-  
-    match gateway.load_scheduler_with(gateway_url, address).await {
-        Ok(sched) => {
-            cache.set_by_owner_with(address, &sched.url, sched.ttl).await;
+    async fn validate(&mut self, address: &str) -> Result<bool, SchedulerErrors> {
+        let cached = self.cache.get_by_owner_with(address).await;
+        if let Some(_) = cached {
             return Ok(true);
-        },
-        Err(e) => {
-            if let SchedulerErrors::InvalidSchedulerLocationError { name: _, message: _ } = e {
-                return Ok(false);
-            }
-            Err(e)
         }
-    }
+    
+        match self.gateway.load_scheduler(address).await {
+            Ok(sched) => {
+                self.cache.set_by_owner_with(address, &sched.url, sched.ttl).await;
+                return Ok(true);
+            },
+            Err(e) => {
+                if let SchedulerErrors::InvalidSchedulerLocationError { name: _, message: _ } = e {
+                    return Ok(false);
+                }
+                Err(e)
+            }
+        }
+    }        
 }
 
 #[cfg(test)]
@@ -57,10 +74,10 @@ mod tests {
     pub struct MockGatewayForIsValid;
     #[async_trait]
     impl GatewayMaker for MockGatewayForIsValid {
-        async fn load_process_scheduler_with<'a>(&self, _gateway_url: &'a str, _process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
+        async fn load_process_scheduler<'a>(&self, _process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
             unimplemented!()
         }
-        async fn load_scheduler_with<'a>(&self, _gateway_url: &'a str, scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>  {
+        async fn load_scheduler<'a>(&self, scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>  {
             assert!(scheduler_wallet_address == SCHEDULER);
             Ok(SchedulerResult {
                 url: DOMAIN.to_string(), ttl: TEN_MS, owner: SCHEDULER.to_string()
@@ -70,17 +87,21 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_with_is_valid() {
-        let result = validate_with(MockLruCacheForIsValid, &MockGatewayForIsValid, "", SCHEDULER).await;
+        let mut validate = Validate {
+            gateway: MockGatewayForIsValid,
+            cache: MockLruCacheForIsValid
+        };
+        let result = validate.validate(SCHEDULER).await;
         assert!(result.is_ok());
     }
 
     pub struct MockGatewayForIsNotValid;
     #[async_trait]
     impl GatewayMaker for MockGatewayForIsNotValid {
-        async fn load_process_scheduler_with<'a>(&self, _gateway_url: &'a str, _process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
+        async fn load_process_scheduler<'a>(&self, _process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
             unimplemented!()
         }
-        async fn load_scheduler_with<'a>(&self, _gateway_url: &'a str, scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>  {
+        async fn load_scheduler<'a>(&self, scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>  {
             assert!(scheduler_wallet_address == SCHEDULER);
             Err(SchedulerErrors::new_invalid_scheduler_location("Big womp".to_string()))
         }
@@ -88,7 +109,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_with_is_not_valid() {
-        let result = validate_with(MockLruCacheForIsValid, &MockGatewayForIsNotValid, "", SCHEDULER).await;
+        let mut validate = Validate {
+            gateway: MockGatewayForIsNotValid,
+            cache: MockLruCacheForIsValid
+        };
+        let result = validate.validate(SCHEDULER).await;
         assert!(result.ok().unwrap() == false);
     }
 
@@ -111,17 +136,21 @@ mod tests {
     pub struct MockGatewayForIsFromCache;
     #[async_trait]
     impl GatewayMaker for MockGatewayForIsFromCache {
-        async fn load_process_scheduler_with<'a>(&self, _gateway_url: &'a str, _process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
+        async fn load_process_scheduler<'a>(&self,  _process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
             unimplemented!()
         }
-        async fn load_scheduler_with<'a>(&self, _gateway_url: &'a str, _scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>  {
+        async fn load_scheduler<'a>(&self, _scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>  {
             panic!("should never call on chain if in cache")
         }
     }
 
     #[tokio::test]
     async fn test_validate_with_is_from_cache() {
-        let result = validate_with(MockLruCacheForIsFromCache, &MockGatewayForIsFromCache, "", SCHEDULER).await;
+        let mut validate = Validate {
+            gateway: MockGatewayForIsFromCache,
+            cache: MockLruCacheForIsFromCache
+        };
+        let result = validate.validate(SCHEDULER).await;
         assert!(result.ok().unwrap() == true);
     }
 }

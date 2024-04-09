@@ -1,28 +1,45 @@
 use crate::{client::{gateway::GatewayMaker, in_memory::Cacher}, err::SchedulerErrors};
+use async_trait::async_trait;
 
-/**
-   * Return the `Scheduler-Location` record for the address
-   * or None, if it cannot be found
-   *
-   * @param {string} address - the wallet address used by the Scheduler
-   * @returns {{ url: string } | None >} whether the wallet address is Scheduler
-   */
-pub async fn raw_with<C: Cacher, G: GatewayMaker>(mut cache: C, gateway: &G, gateway_url: &str, address: &str) -> Result<Option<SchedulerLocation>, SchedulerErrors> {
-    let result = cache.get_by_owner_with(address).await;
-    if let Some(result) = result {
-        return Ok(Some(SchedulerLocation { url: result.url }))
-    }
+pub struct Raw<C, G> {
+    gateway: G,
+    cache: C
+}
 
-    match gateway.load_scheduler_with(gateway_url, address).await  {
-        Ok(sched) => {
-            cache.set_by_owner_with(address, &sched.url, sched.ttl).await;
-            Ok(Some(SchedulerLocation { url: sched.url }))
-        },
-        Err(e) => {
-            if let SchedulerErrors::InvalidSchedulerLocationError { name: _, message: _ } = e {
-                return Ok(None);
+#[async_trait]
+pub trait RawMaker {
+    async fn raw(&mut self, address: &str) -> Result<Option<SchedulerLocation>, SchedulerErrors>;
+}
+
+#[async_trait]
+impl<C, G> RawMaker for Raw<C, G>
+where
+    C: Cacher + std::marker::Send + std::marker::Sync,
+    G: GatewayMaker + std::marker::Send + std::marker::Sync {
+    /**
+    * Return the `Scheduler-Location` record for the address
+    * or None, if it cannot be found
+    *
+    * @param {string} address - the wallet address used by the Scheduler
+    * @returns {{ url: string } | None >} whether the wallet address is Scheduler
+    */
+    async fn raw(&mut self, address: &str) -> Result<Option<SchedulerLocation>, SchedulerErrors> {
+        let result = self.cache.get_by_owner_with(address).await;
+        if let Some(result) = result {
+            return Ok(Some(SchedulerLocation { url: result.url }))
+        }
+
+        match self.gateway.load_scheduler(address).await  {
+            Ok(sched) => {
+                self.cache.set_by_owner_with(address, &sched.url, sched.ttl).await;
+                Ok(Some(SchedulerLocation { url: sched.url }))
+            },
+            Err(e) => {
+                if let SchedulerErrors::InvalidSchedulerLocationError { name: _, message: _ } = e {
+                    return Ok(None);
+                }
+                Err(e)
             }
-            Err(e)
         }
     }
 }
@@ -65,10 +82,10 @@ mod tests {
     struct MockGatewayRawFound;
     #[async_trait]
     impl GatewayMaker for MockGatewayRawFound {
-        async fn load_process_scheduler_with<'a>(&self, _gateway_url: &'a str, _process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
+        async fn load_process_scheduler<'a>(&self, _process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
             unimplemented!()
         }
-        async fn load_scheduler_with<'a>(&self, _gateway_url: &'a str, scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>  {
+        async fn load_scheduler<'a>(&self, scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>  {
             assert!(scheduler_wallet_address == SCHEDULER);
             Ok(SchedulerResult {
                 url: DOMAIN.to_string(), ttl: TEN_MS, owner: SCHEDULER.to_string()
@@ -78,7 +95,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_raw_found() {
-        let result = raw_with(MockCacheRawFound, &MockGatewayRawFound, "", SCHEDULER).await;
+        let mut raw = Raw {
+            gateway: MockGatewayRawFound,
+            cache: MockCacheRawFound
+        };
+        let result = raw.raw(SCHEDULER).await;
         assert!(result.unwrap().unwrap().url == DOMAIN);
     }
 
@@ -100,10 +121,10 @@ mod tests {
     struct MockGatewayRawNotFound;
     #[async_trait]
     impl GatewayMaker for MockGatewayRawNotFound {
-        async fn load_process_scheduler_with<'a>(&self, _gateway_url: &'a str, _process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
+        async fn load_process_scheduler<'a>(&self, _process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
             unimplemented!()
         }
-        async fn load_scheduler_with<'a>(&self, _gateway_url: &'a str, scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>  {
+        async fn load_scheduler<'a>(&self, scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>  {
             assert!(scheduler_wallet_address == SCHEDULER);
             Err(SchedulerErrors::new_invalid_scheduler_location("Big womp".to_string()))
         }
@@ -111,7 +132,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_raw_not_found() {
-        let result = raw_with(MockCacheRawNotFound, &MockGatewayRawNotFound, "", SCHEDULER).await;
+        let mut raw = Raw {
+            gateway: MockGatewayRawNotFound,
+            cache: MockCacheRawNotFound
+        };
+        let result = raw.raw(SCHEDULER).await;
         assert!(result.unwrap().is_none());
     }
 
@@ -133,11 +158,21 @@ mod tests {
     struct MockGatewayRawUseCachedValue;
     #[async_trait]
     impl GatewayMaker for MockGatewayRawUseCachedValue {
-        async fn load_process_scheduler_with<'a>(&self, _gateway_url: &'a str, _process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
+        async fn load_process_scheduler<'a>(&self, _process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
             unimplemented!()
         }
-        async fn load_scheduler_with<'a>(&self, _gateway_url: &'a str, _scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>  {
+        async fn load_scheduler<'a>(&self, _scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>  {
             panic!("should never call on chain if in cache");
         }
+    }
+
+    #[tokio::test]
+    async fn test_raw_use_cached_value() {
+        let mut raw = Raw {
+            gateway: MockGatewayRawNotFound,
+            cache: MockCacheRawNotFound
+        };
+        let result = raw.raw(SCHEDULER).await;
+        assert!(result.is_ok());
     }
 }

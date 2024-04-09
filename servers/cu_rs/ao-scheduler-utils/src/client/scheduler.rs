@@ -41,43 +41,43 @@ impl CheckForRedirectFn for CheckForRedirect {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use mockito::Server;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mockito::Server;
 
-//     const REDIRECT_URL: &str = "http://newlocation.com";
+    const REDIRECT_URL: &str = "http://newlocation.com";
 
-//     #[tokio::test] 
-//     async fn test_redirect_check_for_redirect_with() {
-//         let mut server = Server::new_async().await;
-//         let url = server.url();
+    #[tokio::test] 
+    async fn test_redirect_check_for_redirect_with() {
+        let mut server = Server::new_async().await;
+        let url = server.url();
 
-//         server.mock("GET", "/")
-//             .match_query(mockito::Matcher::UrlEncoded("process-id".to_string(), "123".to_string()))
-//             .with_status(302)
-//             .with_header("Location", REDIRECT_URL)
-//             .with_body("hello world")
-//             .create();
+        server.mock("GET", "/")
+            .match_query(mockito::Matcher::UrlEncoded("process-id".to_string(), "123".to_string()))
+            .with_status(302)
+            .with_header("Location", REDIRECT_URL)
+            .with_body("hello world")
+            .create();
 
-//         let check_redirect = CheckForRedirect;
-//         let result = check_redirect.check_for_redirect_with(url.as_str(), "123").await;
-//         assert!(result.unwrap() == REDIRECT_URL.to_string());
-//     }
+        let check_redirect = CheckForRedirect;
+        let result = check_redirect.check_for_redirect_with(url.as_str(), "123").await;
+        assert!(result.unwrap() == REDIRECT_URL.to_string());
+    }
 
-//     #[tokio::test]
-//     async fn test_noredirect_check_for_redirect_with() {
-//         let mut server = Server::new_async().await;
-//         let url = server.url();
+    #[tokio::test]
+    async fn test_noredirect_check_for_redirect_with() {
+        let mut server = Server::new_async().await;
+        let url = server.url();
 
-//         server.mock("GET", "/")
-//             .match_query(mockito::Matcher::UrlEncoded("process-id".to_string(), "123".to_string()))
-//             .with_header("Location", REDIRECT_URL)
-//             .with_body("hello world")
-//             .create();
+        server.mock("GET", "/")
+            .match_query(mockito::Matcher::UrlEncoded("process-id".to_string(), "123".to_string()))
+            .with_header("Location", REDIRECT_URL)
+            .with_body("hello world")
+            .create();
 
-//         let check_redirect = CheckForRedirect;
-//         let result = check_redirect.check_for_redirect_with(url.as_str(), "123").await;
-//         assert!(result.unwrap() == url);
-//     }
-// }
+        let check_redirect = CheckForRedirect;
+        let result = check_redirect.check_for_redirect_with(url.as_str(), "123").await;
+        assert!(result.unwrap() == url);
+    }
+}

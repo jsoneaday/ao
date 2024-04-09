@@ -1,6 +1,25 @@
 use crate::{client::{gateway::{GatewayMaker, SchedulerResult}, in_memory::{Cacher, UrlOwner}, scheduler::CheckForRedirectFn}, err::SchedulerErrors};
+use async_trait::async_trait;
 
-/**
+pub struct Locate<C: Cacher, G: GatewayMaker, R: CheckForRedirectFn> {
+  gateway: G,
+  cache: C,
+  follow_redirects: bool,
+  check_for_redirect: R
+}
+
+#[async_trait]
+pub trait LocateMaker {
+  async fn locate(&mut self, process: &str, scheduler_hint: Option<&str>) -> Result<UrlOwner, SchedulerErrors>;
+}
+
+#[async_trait]
+impl<C, G, R>  LocateMaker for Locate<C, G, R>
+where
+    C: Cacher + std::marker::Send + std::marker::Sync,
+    G: GatewayMaker + std::marker::Send + std::marker::Sync,
+    R: CheckForRedirectFn + std::marker::Send + std::marker::Sync {
+  /**
    * Locate the scheduler for the given process.
    *
    * Later on, this implementation could encompass the automatic swapping
@@ -10,18 +29,9 @@ use crate::{client::{gateway::{GatewayMaker, SchedulerResult}, in_memory::{Cache
    * @param {string} [schedulerHint] - the id of owner of the scheduler, which prevents having to query the process
    * from a gateway, and instead skips to querying Scheduler-Location
    * @returns { url: string, address: string } - an object whose url field is the Scheduler Location
-   */
-  pub async fn locate_with<C: Cacher, G: GatewayMaker, R: CheckForRedirectFn>(
-    mut cache: C, 
-    gateway: &G, 
-    check_for_redirect: &R,
-    gateway_url: &str,     
-    process: &str, 
-    scheduler_hint: Option<&str>, 
-    follow_redirects: bool
-  ) -> 
-    Result<UrlOwner, SchedulerErrors> {      
-      if let Some(cached) = cache.get_by_process_with(process).await { 
+   */  
+  async fn locate(&mut self, process: &str, scheduler_hint: Option<&str>) -> Result<UrlOwner, SchedulerErrors> {
+      if let Some(cached) = self.cache.get_by_process_with(process).await { 
         return Ok(cached);
       }
       
@@ -31,20 +41,19 @@ use crate::{client::{gateway::{GatewayMaker, SchedulerResult}, in_memory::{Cache
       #[allow(unused)]
       let mut scheduler: Option<SchedulerResult> = None;   
       if scheduler_hint.is_some() {
-        if let Some(by_owner) = cache.get_by_owner_with(scheduler_hint.unwrap()).await {
-          println!("use cache");
+        if let Some(by_owner) = self.cache.get_by_owner_with(scheduler_hint.unwrap()).await {
           return Ok(by_owner);
         }
 
-        match gateway.load_scheduler_with(gateway_url, scheduler_hint.unwrap()).await {
+        match self.gateway.load_scheduler(scheduler_hint.unwrap()).await {
           Ok(sched) => {
-            cache.set_by_owner_with(&sched.owner, &sched.url, sched.ttl).await;
+            self.cache.set_by_owner_with(&sched.owner, &sched.url, sched.ttl).await;
             scheduler = Some(sched);
           },
           Err(e) => return Err(e)
         }
       } else {
-        match gateway.load_process_scheduler_with(gateway_url, process).await {
+        match self.gateway.load_process_scheduler(process).await {
           Ok(sched) => scheduler = Some(sched),
           Err(e) => return Err(e)
         }
@@ -52,18 +61,19 @@ use crate::{client::{gateway::{GatewayMaker, SchedulerResult}, in_memory::{Cache
 
       let scheduler = scheduler.unwrap();
       let mut final_url = scheduler.url.clone();
-      println!("follow_redirects: {}", follow_redirects);
-      if follow_redirects {        
-        match check_for_redirect.check_for_redirect_with(&scheduler.url, process).await {
+      if self.follow_redirects {        
+        match self.check_for_redirect.check_for_redirect_with(&scheduler.url, process).await {
           Ok(url) => final_url = url,
           Err(e) => return Err(e)
         };
       }
 
       let by_process = UrlOwner { url: final_url, address: scheduler.owner };
-      cache.set_by_process_with(process, by_process.clone(), scheduler.ttl).await;
+      self.cache.set_by_process_with(process, by_process.clone(), scheduler.ttl).await;
       return Ok(by_process);
   }
+}
+
 
   #[cfg(test)]
   mod tests {
@@ -80,11 +90,11 @@ use crate::{client::{gateway::{GatewayMaker, SchedulerResult}, in_memory::{Cache
     struct MockGatewayLoadAndCacheIt;
     #[async_trait]
     impl GatewayMaker for MockGatewayLoadAndCacheIt {
-      async fn load_process_scheduler_with<'a>(&self, _gateway_url: &'a str, process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
+      async fn load_process_scheduler<'a>(&self, process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
         assert!(process_tx_id == PROCESS);
         Ok(SchedulerResult { url: DOMAIN.to_string(), ttl: TEN_MS, owner: SCHEDULER.to_string()})
       }
-      async fn load_scheduler_with<'a>(&self, _gateway_url: &'a str, _scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>  {
+      async fn load_scheduler<'a>(&self,_scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>  {
           Err(SchedulerErrors::new_invalid_scheduler_location("should not load the scheduler if no hint".to_string()))
       }
     }
@@ -122,7 +132,13 @@ use crate::{client::{gateway::{GatewayMaker, SchedulerResult}, in_memory::{Cache
 
     #[tokio::test]
     async fn test_location_load_and_cache() {
-      let result = locate_with(MockCacheLoadAndCacheIt, &MockGatewayLoadAndCacheIt, &MockCheckForRedirectLoadAndCacheIt, "", PROCESS, None, false).await;
+      let mut locate = Locate {
+        gateway: MockGatewayLoadAndCacheIt,
+        cache: MockCacheLoadAndCacheIt,
+        follow_redirects: false,
+        check_for_redirect: MockCheckForRedirectLoadAndCacheIt
+      };
+      let result = locate.locate(PROCESS, None).await;
       let result = result.unwrap();
       assert!(result.url == DOMAIN && result.address == SCHEDULER);
     }
@@ -130,10 +146,10 @@ use crate::{client::{gateway::{GatewayMaker, SchedulerResult}, in_memory::{Cache
     struct MockGatewayServeCachedValue;
     #[async_trait]
     impl GatewayMaker for MockGatewayServeCachedValue {
-      async fn load_process_scheduler_with<'a>(&self, _gateway_url: &'a str, _process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
+      async fn load_process_scheduler<'a>(&self, _process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
         Err(SchedulerErrors::new_invalid_scheduler_location("should never call on chain if in cache".to_string()))
       }
-      async fn load_scheduler_with<'a>(&self, _gateway_url: &'a str, _scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>  {
+      async fn load_scheduler<'a>(&self, _scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>  {
           Err(SchedulerErrors::new_invalid_scheduler_location("should not load the scheduler if no hint".to_string()))
       }
     }
@@ -166,7 +182,13 @@ use crate::{client::{gateway::{GatewayMaker, SchedulerResult}, in_memory::{Cache
 
     #[tokio::test]
     async fn test_location_serve_cached_value() {
-      let result = locate_with(MockCacheServeCachedValue, &MockGatewayServeCachedValue, &MockCheckForRedirectServeCachedValue, "", PROCESS, None, false).await;
+      let mut locate = Locate {
+        gateway: MockGatewayServeCachedValue,
+        cache: MockCacheServeCachedValue,
+        follow_redirects: false,
+        check_for_redirect: MockCheckForRedirectServeCachedValue
+      };
+      let result = locate.locate(PROCESS, None).await;
       let result = result.unwrap();
       assert!(result.url == DOMAIN && result.address == SCHEDULER);
     }
@@ -174,11 +196,11 @@ use crate::{client::{gateway::{GatewayMaker, SchedulerResult}, in_memory::{Cache
     struct MockGatewayLoadRedirectedAndCacheIt;
     #[async_trait]
     impl GatewayMaker for MockGatewayLoadRedirectedAndCacheIt {
-      async fn load_process_scheduler_with<'a>(&self, _gateway_url: &'a str, process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
+      async fn load_process_scheduler<'a>(&self, process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
         assert!(process_tx_id == PROCESS);
         Ok(SchedulerResult { url: DOMAIN.to_string(), ttl: TEN_MS, owner: SCHEDULER.to_string()})
       }
-      async fn load_scheduler_with<'a>(&self, _gateway_url: &'a str, _scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>  {
+      async fn load_scheduler<'a>(&self, _scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>  {
           Err(SchedulerErrors::new_invalid_scheduler_location("should not load the scheduler if no hint".to_string()))
       }
     }
@@ -218,7 +240,13 @@ use crate::{client::{gateway::{GatewayMaker, SchedulerResult}, in_memory::{Cache
 
     #[tokio::test]
     async fn test_location_load_redirected_and_cache_it() {
-      let result = locate_with(MockCacheLoadRedirectedAndCacheIt, &MockGatewayLoadRedirectedAndCacheIt, &MockCheckForRedirectLoadRedirectedAndCacheIt, "", PROCESS, None, true).await;
+      let mut locate = Locate {
+        gateway: MockGatewayLoadRedirectedAndCacheIt,
+        cache: MockCacheLoadRedirectedAndCacheIt,
+        follow_redirects: true,
+        check_for_redirect: MockCheckForRedirectLoadRedirectedAndCacheIt
+      };
+      let result = locate.locate(PROCESS, None).await;
       let result = result.unwrap();
       assert!(result.url == DOMAIN_REDIRECT && result.address == SCHEDULER);
     }
@@ -226,10 +254,10 @@ use crate::{client::{gateway::{GatewayMaker, SchedulerResult}, in_memory::{Cache
     struct MockGatewayUseSchedulerHintAndSkipQueryingProcess;
     #[async_trait]
     impl GatewayMaker for MockGatewayUseSchedulerHintAndSkipQueryingProcess {
-      async fn load_process_scheduler_with<'a>(&self, _gateway_url: &'a str, _process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
+      async fn load_process_scheduler<'a>(&self, _process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
         panic!("should not load process if given a scheduler hint");
       }
-      async fn load_scheduler_with<'a>(&self, _gateway_url: &'a str, scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>  {
+      async fn load_scheduler<'a>(&self, scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>  {
           assert!(scheduler_wallet_address == SCHEDULER);
           Ok(SchedulerResult { url: DOMAIN.to_string(), ttl: TEN_MS, owner: SCHEDULER.to_string() })
       }
@@ -271,14 +299,15 @@ use crate::{client::{gateway::{GatewayMaker, SchedulerResult}, in_memory::{Cache
 
     #[tokio::test]
     async fn test_location_use_scheduler_hint_and_skip_querying_process() {
-      let result = locate_with(
-        MockCacheUseSchedulerHintAndSkipQueryingProcess, 
-        &MockGatewayUseSchedulerHintAndSkipQueryingProcess, 
-        &MockCheckForRedirectUseSchedulerHintAndSkipQueryingProcess, 
-        "", 
+      let mut locate = Locate {
+        gateway: MockGatewayUseSchedulerHintAndSkipQueryingProcess,
+        cache: MockCacheUseSchedulerHintAndSkipQueryingProcess,
+        follow_redirects: true,
+        check_for_redirect: MockCheckForRedirectUseSchedulerHintAndSkipQueryingProcess
+      };
+      let result = locate.locate(
         PROCESS, 
-        Some(SCHEDULER),
-        true
+        Some(SCHEDULER)
       ).await;
       let result = result.unwrap();
       assert!(result.url == DOMAIN_REDIRECT && result.address == SCHEDULER);
@@ -287,10 +316,10 @@ use crate::{client::{gateway::{GatewayMaker, SchedulerResult}, in_memory::{Cache
     struct MockGatewayUseSchedulerHintAndCachedOwner;
     #[async_trait]
     impl GatewayMaker for MockGatewayUseSchedulerHintAndCachedOwner {
-      async fn load_process_scheduler_with<'a>(&self, _gateway_url: &'a str, _process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
+      async fn load_process_scheduler<'a>(&self, _process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
         panic!("should not load process if given a scheduler hint");
       }
-      async fn load_scheduler_with<'a>(&self, _gateway_url: &'a str, _scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>  {
+      async fn load_scheduler<'a>(&self, _scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>  {
           panic!("should not load the scheduler if cached");
       }
     }
@@ -329,19 +358,17 @@ use crate::{client::{gateway::{GatewayMaker, SchedulerResult}, in_memory::{Cache
 
     #[tokio::test]
     async fn test_location_use_scheduler_hint_and_cached_owner() {
-      let result = locate_with(
-        MockCacheUseSchedulerHintAndCachedOwner, 
-        &MockGatewayUseSchedulerHintAndCachedOwner, 
-        &MockCheckForRedirectUseSchedulerHintAndCachedOwner, 
-        "", 
+      let mut locate = Locate {
+        gateway: MockGatewayUseSchedulerHintAndCachedOwner,
+        cache: MockCacheUseSchedulerHintAndCachedOwner,
+        follow_redirects: true,
+        check_for_redirect: MockCheckForRedirectUseSchedulerHintAndCachedOwner
+      };
+      let result = locate.locate(
         PROCESS, 
-        Some(SCHEDULER),
-        true
+        Some(SCHEDULER)
       ).await;
       let result = result.unwrap();
-      println!("result {:?}", result);
-      println!("DOMAIN_REDIRECT {:?}", DOMAIN_REDIRECT);
-      println!("SCHEDULER {:?}", SCHEDULER);
       assert!(result.url == DOMAIN && result.address == SCHEDULER);
     }
   }
