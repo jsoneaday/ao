@@ -136,8 +136,8 @@ impl GatewayMaker for Gateway {
 
 impl Gateway {
     /// If you need readonly querying, pass an empty path
-    pub fn new(wallet_path: &str, gateway_url: &str) -> Self {
-        Gateway { arweave: InternalArweave::new(wallet_path, gateway_url), gateway_url: gateway_url.to_string() }
+    pub fn new(keypair_path: &str, gateway_url: &str, uploader_url: &str) -> Self {
+        Gateway { arweave: InternalArweave::new(keypair_path, uploader_url), gateway_url: gateway_url.to_string() }
     }
 
     fn find_tag_value(name: &str, tags: &Vec<Tag>) -> String {
@@ -186,12 +186,31 @@ pub struct SchedulerResult {
 mod tests {
     use std::sync::Once;
     use ao_common::models::{gql_models::{Amount, MetaData}, shared_models::Owner};
+    use dotenv::dotenv;
     use super::*;
 
     const GATEWAY_URL: &str = "https://arweave.net";
-    const WALLET_FILE_PATH: &str = "../test-utils/wallet.json";
+    const UPLOADER_URL: &str = "https://up.arweave.net";
     const SCHEDULER_WALLET_ADDRESS: &str = "_GQ33BkPtZrqxA84vM8Zk-N2aO0toNNu_C-l-rawrBA";
     static INIT: Once = Once::new();
+
+    static JWK_STRING: once_cell::sync::OnceCell<String> = once_cell::sync::OnceCell::new();
+    fn get_jwk() -> &'static String {
+        JWK_STRING.get_or_init(|| {
+            dotenv().ok();
+
+            std::env::var("WALLET").unwrap()
+        })
+    }
+
+    static WALLET_FILE: once_cell::sync::OnceCell<String> = once_cell::sync::OnceCell::new();
+    fn get_wallet_file() -> &'static String {
+        WALLET_FILE.get_or_init(|| {
+            dotenv::dotenv().ok();
+
+            std::env::var("WALLET_FILE").unwrap()
+        })
+    }
 
     fn init() {
         INIT.call_once(|| env_logger::init_from_env(env_logger::Env::new().default_filter_or("info")));
@@ -251,7 +270,7 @@ mod tests {
     async fn test_load_scheduler_with() {
         init();
 
-        let gateway = Gateway::new(WALLET_FILE_PATH, GATEWAY_URL);
+        let gateway = Gateway::new(get_wallet_file(), GATEWAY_URL, UPLOADER_URL);
         
         let result = gateway.load_scheduler(SCHEDULER_WALLET_ADDRESS).await;
         match result {
@@ -264,7 +283,7 @@ mod tests {
     async fn test_load_process_scheduler_with() {
         init();
 
-        let gateway = Gateway::new(WALLET_FILE_PATH, GATEWAY_URL);
+        let gateway = Gateway::new(get_wallet_file(), GATEWAY_URL, UPLOADER_URL);
         
         let result = gateway.load_process_scheduler("KHruEP5dOP_MgNHava2kEPleihEc915GlRRr3rQ5Jz4").await;
         match result {

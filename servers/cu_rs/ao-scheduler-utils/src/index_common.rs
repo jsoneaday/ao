@@ -1,8 +1,8 @@
 use std::env::VarError;
-
 use crate::{client::{gateway::Gateway, in_memory::LocalLruCache, scheduler::CheckForRedirect}, locate::Locate, raw::Raw, validate::Validate};
 
 const DEFAULT_GATEWAY_URL: &str = "https://arweave.net";
+const DEFAULT_UPLOADER_URL: &str = "https://up.arweave.net";
 
 /**
  * @typedef ConnectParams
@@ -22,27 +22,27 @@ const DEFAULT_GATEWAY_URL: &str = "https://arweave.net";
  *
  * @param {ConnectParams} [params]
  */
-pub fn connect(cache_size: u64, wallet_path: &str, gateway_url: Result<String, VarError>, follow_redirects: Option<bool>) -> ConnectReturn {
-    let _gateway_url = if let Ok(gateway_url) = gateway_url { 
-        if gateway_url.is_empty() {
-            DEFAULT_GATEWAY_URL.to_string()
-        } else {
-            gateway_url
-        }
+pub fn connect(cache_size: u64, wallet_path: &str, gateway_url: Option<&str>, uploader_url: Option<&str>, follow_redirects: Option<bool>) -> ConnectReturn {
+    let _gateway_url = if let Some(gateway_url) = gateway_url { 
+        gateway_url
     } else { 
-        DEFAULT_GATEWAY_URL.to_string()
+        DEFAULT_GATEWAY_URL
     };
-    let _gateway_url = &_gateway_url;
+    let _uploader_url = if let Some(uploader_url) = uploader_url { 
+        uploader_url
+    } else { 
+        DEFAULT_UPLOADER_URL
+    };
     let _follow_redirects = if let Some(follow_redirects) = follow_redirects { follow_redirects } else { false };
 
     let check_for_redirect = CheckForRedirect;
     let cache = LocalLruCache::new(cache_size);
 
-    let locate = Locate::new(Gateway::new(wallet_path, _gateway_url), cache.clone(), _follow_redirects, check_for_redirect);
+    let locate = Locate::new(Gateway::new(wallet_path, _gateway_url, _uploader_url), cache.clone(), _follow_redirects, check_for_redirect);
 
-    let validate = Validate::new(Gateway::new(wallet_path, _gateway_url), cache.clone());
+    let validate = Validate::new(Gateway::new(wallet_path, _gateway_url, _uploader_url), cache.clone());
     
-    let raw = Raw::new(Gateway::new(wallet_path, _gateway_url), cache.clone());
+    let raw = Raw::new(Gateway::new(wallet_path, _gateway_url, _uploader_url), cache.clone());
 
     ConnectReturn {
         locate,

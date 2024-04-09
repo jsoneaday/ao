@@ -436,9 +436,11 @@ version = "0.1.0"
 dependencies = [
  "arrs",
  "arweave-rs",
+ "dotenv",
  "futures",
  "futures-util",
  "log 0.4.21",
+ "once_cell",
  "reqwest 0.12.3",
  "serde",
  "serde_json",

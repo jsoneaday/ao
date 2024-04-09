@@ -1,52 +1,74 @@
-use arweave_rs::{Arweave, ArweaveBuilder};
+use arrs::wallet::ArWallet;
+use arweave_rs::crypto::base64::Base64;
+use arweave_rs::transaction::tags::Tag as DataItemTag;
+use arweave_rs::ArweaveBuilder;
 use futures::{Future, FutureExt};
-use reqwest::{Response, Client, Error, Url};
+use reqwest::{Client, Error, Response, Url};
 use serde::{Deserialize, Serialize};
-use std::{path::PathBuf, pin::Pin};
+use std::path::PathBuf;
+use std::pin::Pin;
 #[allow(unused)]
 use log::{error, info};
 use crate::errors::QueryGatewayErrors;
 use crate::network::utils::get_content_type_headers;
 use crate::models::gql_models::{Node, TransactionConnectionSchema};
 use crate::models::shared_models::Tag;
+use std::fs::read_to_string;
 
 pub struct InternalArweave {
-    internal_arweave: Arweave,
+    internal_arweave: ArWallet,
+    uploader_url: String,
     client: Client
 }
 
 impl InternalArweave {
-    pub fn new(keypair_path: &str, gateway_url: &str) -> Self {
+    /// jwk_string: is the contents of the wallet private key json file
+    pub fn new(keypair_path: &str, uploader_url: &str) -> Self {
         InternalArweave {
-            internal_arweave: InternalArweave::create_wallet_client(keypair_path, gateway_url),
+            internal_arweave: InternalArweave::create_wallet_client(keypair_path),
+            uploader_url: uploader_url.to_string(),
             client: Client::new()
         }
     }
 
-    pub fn create_wallet_client(keypair_path: &str, gateway_url: &str) -> Arweave {
-        let arweave_builder = ArweaveBuilder::new();
-        
+    pub fn create_wallet_client(keypair_path: &str) -> ArWallet {
         let mut path = PathBuf::new();
         path.push(keypair_path);
-        arweave_builder
-            .keypair_path(path)
-            .base_url(Url::parse(gateway_url).unwrap())
-            .build().unwrap()
+        let jwk_string = read_to_string(path).unwrap();
+
+        ArWallet::from_jwk(jwk_string.as_str())        
+        
+        // arweave_builder
+        //     .keypair_path(path)
+        //     .base_url(Url::parse(gateway_url).unwrap())
+        //     .build().unwrap()
         // arweave.upload_file_from_path(file_path, additional_tags, fee);
     }
 
     pub fn address_with<'a>(&'a self) -> Box<dyn Fn() -> String + 'a> {
-        Box::new(|| self.internal_arweave.get_wallet_address().unwrap().clone())
+        Box::new(|| self.internal_arweave.address())
     }
 
+    /// todo: need to go through code path to understand if this call is actually necessary and can be replaced, 
+    /// since arweave-rs doesn't have a distinct DataItem object
     pub fn build_sign_dataitem_with(&self) -> impl FnOnce(Vec<u8>, Vec<Tag>, String) -> Pin<Box<dyn Future<Output = DataItem>>> {
+        // let mut path = PathBuf::new();
+        // path.push("");
+        // let arweave_builder = ArweaveBuilder::new();
+        // let arweave_uploader = arweave_builder
+        //      .keypair_path(path)
+        //      .base_url(Url::parse(self.uploader_url.as_str()).unwrap())
+        //      .build().unwrap();
+
+        // let tx = arweave_uploader.create_transaction(target, other_tags, data, quantity, fee, auto_content_tag).await.unwrap();
+        
         move |data: Vec<u8>, tags: Vec<Tag>, anchor: String| {
             async move {
                 DataItem {
                     id: "".to_string(),
                     data,
                     tags,
-                    anchor            
+                    anchor   
                 }
             }.boxed()
         }
@@ -178,7 +200,7 @@ pub struct DataItem {
     pub id: String,
     pub data: Vec<u8>,
     pub tags: Vec<Tag>,
-    pub anchor: String   
+    pub anchor: String  
 }
 
 #[derive(Serialize)]
@@ -198,5 +220,49 @@ struct ProcessIds {
 mod tests {
     use super::*;
 
-    // todo: write tests
+    static JWK_STRING: once_cell::sync::OnceCell<String> = once_cell::sync::OnceCell::new();
+    fn get_jwk() -> &'static String {
+        JWK_STRING.get_or_init(|| {
+            dotenv::dotenv().ok();
+
+            std::env::var("WALLET").unwrap()
+        })
+    }
+
+    static WALLET_FILE: once_cell::sync::OnceCell<String> = once_cell::sync::OnceCell::new();
+    fn get_wallet_file() -> &'static String {
+        WALLET_FILE.get_or_init(|| {
+            dotenv::dotenv().ok();
+
+            std::env::var("WALLET_FILE").unwrap()
+        })
+    }
+
+    static UPLOADER_URL: once_cell::sync::OnceCell<String> = once_cell::sync::OnceCell::new();
+    fn get_uploader_url() -> &'static String {
+        UPLOADER_URL.get_or_init(|| {
+            dotenv::dotenv().ok();
+
+            std::env::var("UPLOADER_URL").unwrap()
+        })
+    }
+
+    #[tokio::test]
+    async fn test_new() {
+        let arweave = InternalArweave::new(get_wallet_file(), get_uploader_url());
+        let balance = arweave.internal_arweave.balance().await.unwrap().parse::<i64>().unwrap();
+        assert!(balance >= 0);
+    }
+
+    #[tokio::test]
+    async fn test_create_wallet_client() {
+        let wallet = InternalArweave::create_wallet_client(get_jwk());
+        assert!(!wallet.address().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_address_with() {
+        let arweave = InternalArweave::new(get_wallet_file(), get_uploader_url());
+        assert!(!arweave.address_with()().is_empty());
+    }
 }
