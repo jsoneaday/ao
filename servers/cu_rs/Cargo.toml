@@ -5,6 +5,7 @@ members = [
     "faas", 
     "ao-scheduler-utils", 
     "loader", 
-    "ao-common"
+    "ao-common",
+    "ar-bundles"
 ]
 resolver = "2"
