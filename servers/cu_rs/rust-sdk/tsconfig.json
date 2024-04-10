@@ -1,0 +1,25 @@
+{
+    "compilerOptions": {
+        "target": "es2019",
+        "module": "ESNext",
+        "moduleResolution": "nodenext",
+        "skipLibCheck": true,
+        "allowSyntheticDefaultImports": true,
+        "allowJs": true,
+        "importHelpers": true,
+        "declaration": false,
+        "outDir": "dist",
+        "lib": [
+            "esnext",
+            "es2019",
+            "DOM"
+        ],
+        "alwaysStrict": true,
+        "sourceMap": true,
+        "strictNullChecks": false,
+        "experimentalDecorators": true,
+        "strict": true,
+        "resolveJsonModule": true,
+        "esModuleInterop": true,
+    },
+}

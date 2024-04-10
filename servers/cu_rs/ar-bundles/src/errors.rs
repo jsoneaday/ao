@@ -10,7 +10,14 @@ pub enum ArBundleErrors {
 impl Display for ArBundleErrors {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::KeyCreationFailed(e) => write!(f, "Key creation failed: {}", e.to_string()),
+            Self::KeyCreationFailed(e) => write!(
+                f, 
+                "Key creation failed: {}", 
+                match e {
+                    Some(e) => e.to_string(),
+                    None => "".to_string()
+                }
+            ),
             Self::JsonWebKeyError(e) => write!(f, "JsonWebKey error: {}", e.to_string()),
             Self::ReadKeyPairFileFailed(e) => write!(f, "Read keypair file failed: {}", e.to_string())
         }

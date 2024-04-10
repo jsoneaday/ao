@@ -9,5 +9,5 @@ edition = "2021"
 actix-web = "4.5.1"
 anyhow = "1.0.81"
 wasmedge-sdk = "0.13.2"
-wasmedge-sdk-bindgen = { path = "../rust-sdk/" }
+wasmedge-sdk-bindgen = { path = "../wasmedge-sdk-bindgen/" }
 wasmedge_quickjs = "0.2.0"
