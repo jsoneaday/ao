@@ -4,7 +4,10 @@ use std::fmt::Display;
 pub enum ArBundleErrors {
     KeyCreationFailed(Option<Box<dyn std::error::Error + 'static + Send>>),
     JsonWebKeyError(jsonwebkey::Error),
-    ReadKeyPairFileFailed(Box<dyn std::error::Error + 'static + Send>)
+    ReadKeyPairFileFailed(Box<dyn std::error::Error + 'static + Send>),
+    SignatureAttemptFailed,
+    IoFailure(std::io::Error),
+    TagIsUndefinedOrEmpty
 }
 
 impl Display for ArBundleErrors {
@@ -19,7 +22,10 @@ impl Display for ArBundleErrors {
                 }
             ),
             Self::JsonWebKeyError(e) => write!(f, "JsonWebKey error: {}", e.to_string()),
-            Self::ReadKeyPairFileFailed(e) => write!(f, "Read keypair file failed: {}", e.to_string())
+            Self::ReadKeyPairFileFailed(e) => write!(f, "Read keypair file failed: {}", e.to_string()),
+            Self::SignatureAttemptFailed => write!(f, "Signature attempt file failed"),
+            Self::IoFailure(e) => write!(f, "IO Failure: {}", e.to_string()),
+            Self::TagIsUndefinedOrEmpty => write!(f, "Tag is undefined or empty")
         }
     }
 }
@@ -32,7 +38,10 @@ impl std::error::Error for ArBundleErrors {
                 None => None
             },
             Self::JsonWebKeyError(e) => Some(e),
-            Self::ReadKeyPairFileFailed(e) => Some(e.as_ref())
+            Self::ReadKeyPairFileFailed(e) => Some(e.as_ref()),
+            Self::SignatureAttemptFailed => None,
+            Self::IoFailure(e) => Some(e),
+            Self::TagIsUndefinedOrEmpty => None
         }
     }
 }
