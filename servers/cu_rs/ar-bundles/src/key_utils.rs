@@ -28,7 +28,7 @@ impl CryptoDriver {
     }
 
     pub fn from_jwk(jwk: jwk::JsonWebKey) -> Result<RsaPrivateKey, ArBundleErrors> {
-        let pem = jwk.key.to_pem();
+        let pem = jwk.key.as_ref().to_pem();
         match RsaPrivateKey::from_pkcs1_pem(&pem) {
             Ok(priv_key) => Ok(priv_key),
             Err(e) => Err(ArBundleErrors::KeyCreationFailed(Some(Box::new(e))))
