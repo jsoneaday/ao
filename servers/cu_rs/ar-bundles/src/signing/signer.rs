@@ -1,11 +1,16 @@
-use crate::tags::Tag;
+use std::any::Any;
+
+pub enum PemType {
+    StringType(String),
+    BufferType(Vec<u8>)
+}
 
 pub struct Signer {
-    pub signer: Vec<u8>,
+    pub signer: Option<Box<dyn Any>>, // any
     pub public_key: Vec<u8>,
     pub signature_type: i64,
-    pub signature_length: i64,
-    pub owner_length: i64,
+    pub signature_length: usize,
+    pub owner_length: usize,
     pub pem: String
 }
 
