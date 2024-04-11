@@ -7,7 +7,8 @@ pub enum ArBundleErrors {
     ReadKeyPairFileFailed(Box<dyn std::error::Error + 'static + Send>),
     SignatureAttemptFailed,
     IoFailure(std::io::Error),
-    TagIsUndefinedOrEmpty
+    TagIsUndefinedOrEmpty,
+    SignatureConfigTypeNotFound
 }
 
 impl Display for ArBundleErrors {
@@ -25,7 +26,8 @@ impl Display for ArBundleErrors {
             Self::ReadKeyPairFileFailed(e) => write!(f, "Read keypair file failed: {}", e.to_string()),
             Self::SignatureAttemptFailed => write!(f, "Signature attempt file failed"),
             Self::IoFailure(e) => write!(f, "IO Failure: {}", e.to_string()),
-            Self::TagIsUndefinedOrEmpty => write!(f, "Tag is undefined or empty")
+            Self::TagIsUndefinedOrEmpty => write!(f, "Tag is undefined or empty"),
+            Self::SignatureConfigTypeNotFound => write!(f, "SignatureConfig type not found")
         }
     }
 }
@@ -41,7 +43,8 @@ impl std::error::Error for ArBundleErrors {
             Self::ReadKeyPairFileFailed(e) => Some(e.as_ref()),
             Self::SignatureAttemptFailed => None,
             Self::IoFailure(e) => Some(e),
-            Self::TagIsUndefinedOrEmpty => None
+            Self::TagIsUndefinedOrEmpty => None,
+            Self::SignatureConfigTypeNotFound => None
         }
     }
 }
