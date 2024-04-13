@@ -8,7 +8,8 @@ pub enum ArBundleErrors {
     SignatureAttemptFailed,
     IoFailure(std::io::Error),
     TagIsUndefinedOrEmpty,
-    SignatureConfigTypeNotFound
+    SignatureConfigTypeNotFound,
+    ArweaveError(arweave_rs::error::Error)
 }
 
 impl Display for ArBundleErrors {
@@ -27,7 +28,8 @@ impl Display for ArBundleErrors {
             Self::SignatureAttemptFailed => write!(f, "Signature attempt file failed"),
             Self::IoFailure(e) => write!(f, "IO Failure: {}", e.to_string()),
             Self::TagIsUndefinedOrEmpty => write!(f, "Tag is undefined or empty"),
-            Self::SignatureConfigTypeNotFound => write!(f, "SignatureConfig type not found")
+            Self::SignatureConfigTypeNotFound => write!(f, "SignatureConfig type not found"),
+            Self::ArweaveError(e) => write!(f, "Arweave client error: {}", e.to_string())
         }
     }
 }
@@ -44,7 +46,8 @@ impl std::error::Error for ArBundleErrors {
             Self::SignatureAttemptFailed => None,
             Self::IoFailure(e) => Some(e),
             Self::TagIsUndefinedOrEmpty => None,
-            Self::SignatureConfigTypeNotFound => None
+            Self::SignatureConfigTypeNotFound => None,
+            Self::ArweaveError(e) => Some(e)
         }
     }
 }

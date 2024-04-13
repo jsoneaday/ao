@@ -1,6 +1,7 @@
 use std::any::Any;
+use crate:: errors::ArBundleErrors;
 
-pub enum PemType {
+pub enum StringOrVecu8 {
     StringType(String),
     BufferType(Vec<u8>)
 }
@@ -11,17 +12,20 @@ pub struct Signer {
     pub signature_type: i64,
     pub signature_length: usize,
     pub owner_length: usize,
-    pub pem: String
+    pub pem: String,
+    pub keypair_path: String
 }
 
 pub struct Options;
 
-// pub trait SignerMaker {
-//     async fn sign(message: Vec<u8>, _opts: Option<Options>): Result<Vec<u8>, ArBundleErrors>>;
-//     async fn sign_data_item?(data_item: string | Buffer, tags: Vec<Tag>): Promise<DataItem>;
-//     async fn set_public_key?(): Promise<void>;
-//     async fn get_address?(): Promise<string>;
-//     fn verify(_pk: string | Buffer, _message: Uint8Array, _signature: Uint8Array, _opts?: any): boolean {
-//         throw new Error('You must implement verify method on child');
-//     }
-// }
+pub trait SignerMaker {
+    fn sign(&self, message: &[u8]) -> Result<Vec<u8>, ArBundleErrors>;
+    // async fn sign_data_item(data_item: StringOrVecu8, tags: Vec<Tag>) -> Result<DataItem, ArBundleErrors>;
+    // async fn set_public_key() -> Result<(), ArBundleErrors>;
+    // async fn get_address() -> Result<String, ArBundleErrors>;
+    fn verify(&self, _pk: &[u8], _message: &[u8], _signature: &[u8]) -> bool {
+        unimplemented!("You must implement verify method on child");
+    }
+
+    fn get_keypair_path(&self) -> String;
+}

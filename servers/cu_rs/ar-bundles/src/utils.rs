@@ -1,9 +1,9 @@
 use crate::errors::ArBundleErrors;
 
-pub fn byte_array_to_long(byte_array: Vec<u8>) -> u8 {
-    let mut value = 0;
+pub fn byte_array_to_long(byte_array: &[u8]) -> i64 {
+    let mut value: i64 = 0;
     for i in (0..byte_array.len() - 1).rev() {
-      value = value * 256 + byte_array[i];
+      value = value * 256 + byte_array[i] as i64;
     }
     return value;
 }

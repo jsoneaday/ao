@@ -9,9 +9,11 @@ pub mod tags;
 pub mod signing {
     pub mod signer;
     pub mod chains {
-        pub mod constants;
+        pub mod arweave_signer;
     }
+    pub mod constants;
 }
 pub mod utils;
 pub mod bundle_item;
 pub mod constants;
+pub mod interface_jwk;

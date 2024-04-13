@@ -1,7 +1,7 @@
 use crate::data_item::DataItem;
 use crate::errors::ArBundleErrors;
 use crate::signing::signer::Signer;
-use crate::tags::{AVSCTap, Tag};
+use crate::tags::{serialize_tags, Tag};
 use crate::utils::{long_to_8_byte_array, short_to_2_byte_array};
 
 pub struct DataItemCreateOptions {
@@ -34,7 +34,7 @@ pub fn create_data(data: Data, signer: &Signer, opts: Option<&DataItemCreateOpti
         _anchor.len()
     } else { 0 });
     let _tags = if opts.is_some() && opts.unwrap().tags.is_some() && opts.unwrap().tags.as_ref().unwrap().len() > 0 {
-        match AVSCTap::serialize_tags(opts.unwrap().tags.as_ref().unwrap()) {
+        match serialize_tags(opts.unwrap().tags.as_ref().unwrap()) {
             Ok(_tags) => Some(_tags),
             Err(_) => None
         }
@@ -115,5 +115,5 @@ pub fn create_data(data: Data, signer: &Signer, opts: Option<&DataItemCreateOpti
 
     bytes[data_start..data_start + _data.len()].copy_from_slice(&_data);
 
-    Ok(DataItem)
+    Ok(DataItem::new(bytes, &signer.keypair_path))
 }
