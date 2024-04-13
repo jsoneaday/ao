@@ -6,7 +6,6 @@ members = [
     "ao-scheduler-utils", 
     "loader", 
     "ao-common",
-    "ar-bundles",
     "rust-sdk",
     "wasmedge-sdk-bindgen"
 ]

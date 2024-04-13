@@ -1,4 +1,4 @@
-use arrs::wallet::ArWallet;
+use arweave_rs::Arweave;
 use arweave_rs::crypto::base64::Base64;
 use arweave_rs::transaction::tags::Tag as DataItemTag;
 use arweave_rs::ArweaveBuilder;
@@ -13,10 +13,9 @@ use crate::errors::QueryGatewayErrors;
 use crate::network::utils::get_content_type_headers;
 use crate::models::gql_models::{Node, TransactionConnectionSchema};
 use crate::models::shared_models::Tag;
-use std::fs::read_to_string;
 
 pub struct InternalArweave {
-    internal_arweave: ArWallet,
+    internal_arweave: Arweave,
     uploader_url: String,
     wallet_path: String,
     client: Client
@@ -25,25 +24,31 @@ pub struct InternalArweave {
 impl InternalArweave {
     pub fn new(keypair_path: &str, uploader_url: &str) -> Self {
         InternalArweave {
-            internal_arweave: InternalArweave::create_wallet_client(keypair_path),
+            internal_arweave: InternalArweave::create_wallet_client(keypair_path, uploader_url),
             uploader_url: uploader_url.to_string(),
             wallet_path: keypair_path.to_string(),
             client: Client::new()
         }
     }
 
-    pub fn create_wallet_client(keypair_path: &str) -> ArWallet {
+    pub fn create_wallet_client(keypair_path: &str, uploader_url: &str) -> Arweave {
         let mut path = PathBuf::new();
-        path.push(keypair_path);        
-        let jwk_string = read_to_string(path).unwrap();
+        path.push(keypair_path);
 
-        ArWallet::from_jwk(jwk_string.as_str())        
+        let arweave_builder = ArweaveBuilder::new();
+        arweave_builder
+             .keypair_path(path)
+             .base_url(Url::parse(uploader_url).unwrap())
+             .build().unwrap() 
         
         // arweave.upload_file_from_path(file_path, additional_tags, fee);
     }
 
-    pub fn address_with<'a>(&'a self) -> Box<dyn Fn() -> String + 'a> {
-        Box::new(|| self.internal_arweave.address())
+    pub fn address_with(&self) -> Result<String, QueryGatewayErrors> {
+        match self.internal_arweave.get_wallet_address() {
+            Ok(res) => Ok(res),
+            Err(e) => Err(QueryGatewayErrors::WalletError(e))
+        }
     }
 
     /// todo: need to go through code path to understand if this call is actually necessary and can be replaced, 
@@ -258,20 +263,19 @@ mod tests {
     #[tokio::test]
     async fn test_new() {
         let arweave = InternalArweave::new(get_wallet_file(), get_uploader_url());
-        let balance = arweave.internal_arweave.balance().await.unwrap().parse::<i64>().unwrap();
-        assert!(balance >= 0);
+        assert!(!arweave.address_with().unwrap().is_empty());
     }
 
     #[tokio::test]
     async fn test_create_wallet_client() {
-        let wallet = InternalArweave::create_wallet_client(get_wallet_file());
-        assert!(!wallet.address().is_empty());
+        let wallet = InternalArweave::create_wallet_client(get_wallet_file(), get_uploader_url());
+        assert!(!wallet.get_wallet_address().unwrap().is_empty());
     }
 
     #[tokio::test]
     async fn test_address_with() {
         let arweave = InternalArweave::new(get_wallet_file(), get_uploader_url());
-        assert!(!arweave.address_with()().is_empty());
+        assert!(!arweave.address_with().unwrap().is_empty());
     }
 
     #[tokio::test]

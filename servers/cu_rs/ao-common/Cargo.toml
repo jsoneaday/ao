@@ -6,7 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-arrs = {path = "../arrs"}
 arweave-rs = { git = "https://github.com/Irys-xyz/arweave-rs" }
 bundlr-sdk = { path = "../rust-sdk" }
 dotenv = "0.15.0"
