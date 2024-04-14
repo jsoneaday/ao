@@ -1,11 +1,12 @@
 use std::error::Error;
-use std::fmt::Display;
+use std::fmt::{write, Display};
 
 #[derive(Debug)]
 pub enum QueryGatewayErrors {
     Network(Option<Box<dyn std::error::Error + 'static + Send>>),    
     Serialization(Option<Box<dyn std::error::Error + 'static + Send>>),
-    WalletError(arweave_rs::error::Error)
+    WalletError(arweave_rs::error::Error),
+    BundlerFailure(ar_bundles::errors::ArBundleErrors)
 }
 
 impl Error for QueryGatewayErrors {
@@ -23,7 +24,8 @@ impl Error for QueryGatewayErrors {
                     None => None
                 }
             },
-            Self::WalletError(err) => Some(err)
+            Self::WalletError(err) => Some(err),
+            Self::BundlerFailure(err) => Some(err)
         }
     }
 }
@@ -33,7 +35,8 @@ impl Display for QueryGatewayErrors {
         match self {
             Self::Network(_) => write!(f, "Network error has occurred"),
             Self::Serialization(_) => write!(f, "Serialization error has occurred"),
-            Self::WalletError(e) => write!(f, "{}", e.to_string())
+            Self::WalletError(e) => write!(f, "{}", e.to_string()),
+            Self::BundlerFailure(e) => write!(f, "{}", e.to_string())
         }
     }
 }

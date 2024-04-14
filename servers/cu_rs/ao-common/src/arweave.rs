@@ -1,18 +1,19 @@
+use ar_bundles::interface_jwk::JWKInterface;
+use ar_bundles::signing::{signer::SignerMaker, chains::arweave_signer::ArweaveSigner};
+use ar_bundles::tags::Tag;
+use ar_bundles::data_item::DataItem;
 use arweave_rs::Arweave;
-use arweave_rs::crypto::base64::Base64;
-use arweave_rs::transaction::tags::Tag as DataItemTag;
 use arweave_rs::ArweaveBuilder;
-use futures::{Future, FutureExt};
+use ar_bundles::ar_data_create::{create_data, Data, DataItemCreateOptions};
+use rand::Rng;
 use reqwest::{Client, Error, Response, Url};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::pin::Pin;
 #[allow(unused)]
 use log::{error, info};
 use crate::errors::QueryGatewayErrors;
 use crate::network::utils::get_content_type_headers;
 use crate::models::gql_models::{Node, TransactionConnectionSchema};
-use crate::models::shared_models::Tag;
 
 pub struct InternalArweave {
     internal_arweave: Arweave,
@@ -31,7 +32,7 @@ impl InternalArweave {
         }
     }
 
-    pub fn create_wallet_client(keypair_path: &str, uploader_url: &str) -> Arweave {
+    fn create_wallet_client(keypair_path: &str, uploader_url: &str) -> Arweave {
         let mut path = PathBuf::new();
         path.push(keypair_path);
 
@@ -51,41 +52,28 @@ impl InternalArweave {
         }
     }
 
+    /// todo: may need to switch to non-random
+    pub fn create_random_anchor() -> [u8; 32] {
+        let mut rng = rand::thread_rng();
+        let mut anchor = [0; 32];
+        rng.fill(&mut anchor[..]);
+        anchor
+    }
+
     /// todo: need to go through code path to understand if this call is actually necessary and can be replaced, 
     /// since arweave-rs doesn't have a distinct DataItem object
-    pub fn build_sign_dataitem_with(&self) -> impl FnOnce(Vec<u8>, Vec<Tag>, String) -> Pin<Box<dyn Future<Output = Result<DataItem, QueryGatewayErrors>>>> {
-        let mut path = PathBuf::new();
-        path.push(self.wallet_path.as_str());
-        let arweave_builder = ArweaveBuilder::new();
-        let arweave_uploader = arweave_builder
-             .keypair_path(path)
-             .base_url(Url::parse(self.uploader_url.as_str()).unwrap())
-             .build().unwrap();
+    pub fn build_sign_dataitem_with(&self, data: Data, anchor: [u8;32], tags: Vec<Tag>) -> Result<DataItem, QueryGatewayErrors> {
+        let jwk_str = std::fs::read_to_string(self.wallet_path.as_str()).unwrap();
+        let jwk = serde_json::from_str::<JWKInterface>(&jwk_str).unwrap();
+        let signer = ArweaveSigner::new(jwk, &self.wallet_path);
         
-        move |data: Vec<u8>, tags: Vec<Tag>, anchor: String| {
-            async move {
-                match arweave_uploader.get_fee(Base64::empty(), data.clone()).await {
-                    Ok(fee) => {
-                        let dataitem_tags = tags.iter().map(|tag| DataItemTag {
-                            name: Base64::from_utf8_str(&tag.name).unwrap(),
-                            value: Base64::from_utf8_str(&tag.value).unwrap()
-                        })
-                        .collect::<Vec<DataItemTag<Base64>>>();
-                        match arweave_uploader.create_transaction(Base64::empty(), dataitem_tags, data.clone(), 0, fee, true).await {
-                            Ok(tx) => {
-                                // let signed_tx = arweave_uploader.sign_transaction(tx).unwrap();
-                                // arweave_uploader.post_transaction(&signed_tx);                
-                                Ok(DataItem {
-                                    id: tx.id,
-                                    data, 
-                                })
-                            },
-                            Err(e) => Err(QueryGatewayErrors::Network(Some(Box::new(e))))
-                        }
-                    },                    
-                    Err(e) => Err(QueryGatewayErrors::Serialization(Some(Box::new(e))))
-                }                
-            }.boxed()
+        match create_data(data, &signer, Some(&DataItemCreateOptions {
+            target: None,
+            anchor: Some(anchor),
+            tags: Some(tags)
+        })) {
+            Ok(di) => Ok(di),
+            Err(e) => Err(QueryGatewayErrors::BundlerFailure(e))
         }
     }
 
@@ -210,12 +198,6 @@ impl InternalArweave {
     }
 }
 
-#[derive(Serialize, Debug)]
-pub struct DataItem {
-    pub id: Base64,
-    pub data: Vec<u8>
-}
-
 #[derive(Serialize)]
 struct GraphqlQuery<T> {
     query: String,
@@ -232,15 +214,6 @@ struct ProcessIds {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    static JWK_STRING: once_cell::sync::OnceCell<String> = once_cell::sync::OnceCell::new();
-    fn get_jwk() -> &'static String {
-        JWK_STRING.get_or_init(|| {
-            dotenv::dotenv().ok();
-
-            std::env::var("WALLET").unwrap()
-        })
-    }
 
     static WALLET_FILE: once_cell::sync::OnceCell<String> = once_cell::sync::OnceCell::new();
     fn get_wallet_file() -> &'static String {
@@ -286,7 +259,16 @@ mod tests {
         let mut path = PathBuf::new();
         path.push("test.png");
         
-        let data_item = arweave.build_sign_dataitem_with()(std::fs::read(path).unwrap(), vec![Tag { name: "test".to_string(), value: "test value".to_string() }], "123".to_string()).await;        
+        let data = std::fs::read(path).unwrap();
+        let data_item = arweave.build_sign_dataitem_with(
+            Data::BinaryData(data.clone()), 
+            InternalArweave::create_random_anchor(),
+            vec![Tag { 
+                name: Some("test".to_string()), 
+                value: Some("test value".to_string()) 
+            }]
+        );
+        // println!("error {:?}", data_item.ok());
         assert!(data_item.is_ok());
     }
 }

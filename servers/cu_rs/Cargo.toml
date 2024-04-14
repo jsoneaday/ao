@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "ar-bundles",
     "cu", 
     "client-lib",
     "faas", 
