@@ -73,6 +73,29 @@ impl CryptoDriver {
     pub fn string_to_buffer(str: &str) -> &[u8] {
         str.as_bytes()
     }
+
+    // pub fn concat_buffers(
+    //     buffers: [u8],
+    //   ) -> [u8] {
+    //     let mut total_length = 0;
+      
+    //     for i in 0..buffers.len() {
+    //       total_length += buffers[i].len();
+    //     }
+      
+    //     let mut temp = [0u8; total_length];
+    //     let mut offset = 0;
+      
+    //     temp[offset..1].copy_from_slice(buffers[0]);
+    //     offset += buffers[0].len();
+      
+    //     for i in 1..buffers.len() {
+    //       temp[offset..buffers.len()].copy_from_slice(buffers[i]);
+    //       offset += buffers[i].len();
+    //     }
+      
+    //     return temp;
+    // }
 }
 
 static CRYPTO_DRIVER: OnceCell<CryptoDriver> = OnceCell::new();

@@ -50,7 +50,7 @@ pub fn create_data<T: SignerMaker>(data: Data, signer: &T, opts: Option<&DataIte
     };
     let data_length = _data.len();
 
-    let length = 2 + signer.get_signature_length() + signer.get_owner_length() + target_length + anchor_length + tags_length + data_length;
+    let length = 2 + signer.get_signature_length() + signer.get_owner_length() + target_length + anchor_length + tags_length + data_length;    
     let mut bytes = vec![0; length];
 
     bytes[0..2].copy_from_slice(&short_to_2_byte_array(signer.get_signature_type()).unwrap());
@@ -114,6 +114,6 @@ pub fn create_data<T: SignerMaker>(data: Data, signer: &T, opts: Option<&DataIte
     let data_start = tags_start + tags_length;
 
     bytes[data_start..data_start + _data.len()].copy_from_slice(&_data);
-
+    
     Ok(DataItem::new(bytes, &signer.get_keypair_path()))
 }

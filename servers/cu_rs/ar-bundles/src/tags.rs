@@ -29,7 +29,6 @@ impl AVSCTap {
 
     pub fn write_tags(&mut self, tags: &Vec<Tag>) -> Result<(), ArBundleErrors> {
         let n = tags.len();
-        println!("write_tags n {}", n);
 
         if n > 0 {
             _ = self.write_long(n as i64);

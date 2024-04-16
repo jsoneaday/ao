@@ -155,7 +155,7 @@ impl Gateway {
     }
     
     async fn gateway_with<'a, T: Serialize, U: for<'de> serde::Deserialize<'de>>(&self, gateway_url: &'a str, query: &'a str, variables: T) -> Result<U, QueryGatewayErrors> {
-        let result = self.arweave.query_gateway_with::<T, U>(gateway_url, query, variables).await;
+        let result = self.arweave.query_gateway::<T, U>(gateway_url, query, variables).await;
         
         match result {
             Ok(res) => Ok(res),
