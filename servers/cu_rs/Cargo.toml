@@ -1,13 +1,11 @@
 [workspace]
 members = [
-    "ar-bundles",
     "cu", 
     "client-lib",
     "faas", 
     "ao-scheduler-utils", 
     "loader", 
     "ao-common",
-    "rust-sdk",
     "wasmedge-sdk-bindgen"
 ]
 resolver = "2"

@@ -9,3 +9,8 @@ pub mod network {
 pub mod arweave;
 pub mod errors;
 pub mod test_utils;
+pub mod domain {
+    pub mod core {
+        pub mod bytes;
+    }
+}
