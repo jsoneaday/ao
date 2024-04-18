@@ -1,12 +1,12 @@
 use std::error::Error;
-use std::fmt::{write, Display};
+use std::fmt::Display;
 
 #[derive(Debug)]
 pub enum QueryGatewayErrors {
     Network(Option<Box<dyn std::error::Error + 'static + Send>>),    
     Serialization(Option<Box<dyn std::error::Error + 'static + Send>>),
     WalletError(arweave_rs::error::Error),
-    BundlerFailure(ar_bundles::errors::ArBundleErrors)
+    BundlerFailure(bundlr_sdk::error::BundlrError)
 }
 
 impl Error for QueryGatewayErrors {

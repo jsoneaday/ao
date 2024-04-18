@@ -1,5 +1,6 @@
+use std::clone::Clone;
 use bytes::{BufMut, Bytes};
-use bundlr_sdk::{error::BundlrError, tags::{AvroDecode, Tag}};
+use bundlr_sdk::{error::BundlrError, tags::{AvroDecode, Tag, AvroEncode}};
 use sha2::{Digest, Sha256, Sha384};
 use base64_url;
 use ring::rand::SecureRandom;
@@ -28,7 +29,7 @@ pub struct DataBundle {
 }
 
 impl DataBundle {
-    pub fn new(tags: Vec<u8>) -> Self {
+    pub fn new(tags: Vec<Tag>) -> Self {
         DataBundle { items: Vec::new(), tags }
     }
 
@@ -37,7 +38,7 @@ impl DataBundle {
     }
 
     pub fn to_bytes(&self) -> Result<Vec<u8>, ByteErrorType> {
-        let mut headers = vec![u8; 64 * self.items.len()];
+        let mut headers = vec![0u8; 64 * self.items.len()];
         let mut binaries = Vec::new();
 
         for (index, item) in self.items.iter().enumerate() {
@@ -74,9 +75,10 @@ fn long_to_n_byte_array(n: usize, long: u64) -> Result<Vec<u8>, ByteErrorType> {
 }
 
 fn long_to_32_byte_array(value: u64) -> Result<Vec<u8>, ByteErrorType> {
-    long_to_n_byte_array(32, value);
+    long_to_n_byte_array(32, value)
 }
 
+#[derive(Clone)]
 enum Data {
     None,
     Bytes(Vec<u8>)
@@ -89,7 +91,7 @@ pub struct DataItem {
     owner: Vec<u8>,
     target: Vec<u8>,
     anchor: Vec<u8>,
-    tags: Vec<u8>,
+    tags: Vec<Tag>,
     data: Data
 }
 
@@ -178,12 +180,12 @@ fn sha384hash(b: Bytes) -> Bytes {
 }
 
 impl DataItem {
-    pub fn new(target: Vec<u8>, data: Vec<u8>, tags: Vec<u8>, owner: Vec<u8>) -> Result<Self, ByteErrorType> {
+    pub fn new(target: Vec<u8>, data: Vec<u8>, tags: Vec<Tag>, owner: Vec<u8>) -> Result<Self, ByteErrorType> {
         let mut randoms: [u8; 32] = [0; 32];
         let sr = ring::rand::SystemRandom::new();
         match sr.fill(&mut randoms) {
             Ok(()) => (),
-            Err(e) => return Err(ByteErrorType::ByteError(e))
+            Err(e) => return Err(ByteErrorType::ByteError(e.to_string()))
         }
         let anchor = randoms.to_vec();
 
@@ -204,7 +206,7 @@ impl DataItem {
         let encoded_tags = if !self.tags.is_empty() {
             self.tags.encode()?
         } else {
-            Bytes::deffault()
+            Bytes::default()
         };
 
         match &mut self.data {
@@ -267,7 +269,7 @@ impl DataItem {
         let anchor_start = target_start + 1 + target.len();
         let anchor_present = u8::from_le_bytes(
             <[u8; 1]>::try_from(&buffer[anchor_start..anchor_start + 1])
-                .map_err(|err| ByteErrorType::ByteError(format!("anchor bytes error - {}", err.to_string())))   
+                .map_err(|err| ByteErrorType::ByteError(format!("anchor bytes error - {}", err.to_string())))?
         );
         let anchor = match anchor_present {
             0 => &[],
@@ -278,12 +280,12 @@ impl DataItem {
         let tags_start = anchor_start + 1 + anchor.len();
         let number_of_tags = u64::from_le_bytes(
             <[u8;8]>::try_from(&buffer[tags_start..tags_start + 8])
-                .map_err(|err| ByteErrorType::ByteError(format!("tag bytes error - {}", err.to_string())))   
+                .map_err(|err| ByteErrorType::ByteError(format!("tag bytes error - {}", err.to_string())))?
         );
 
         let number_of_tags_bytes = u64::from_le_bytes(
             <[u8;8]>::try_from(&buffer[tags_start + 8..tags_start + 16])
-                .map_err(|err| ByteErrorType::ByteError(format!("tag bytes error - {}", err.to_string())))   
+                .map_err(|err| ByteErrorType::ByteError(format!("tag bytes error - {}", err.to_string())))?
         );
 
         let mut b = buffer.to_vec();
@@ -310,5 +312,167 @@ impl DataItem {
         };
 
         Ok((data_item, tags_start + 16 + number_of_tags_bytes as usize))
+    }
+
+    pub fn from_bytes(buffer: Vec<u8>) -> Result<Self, ByteErrorType> {
+        let (bundlr_tx, data_start) = DataItem::from_info_bytes(&buffer)?;
+        let data = &buffer[data_start..buffer.len()];
+
+        Ok(DataItem {
+            data: Data::Bytes(data.to_vec()),
+            ..bundlr_tx
+        })
+    }
+
+    pub fn as_bytes(&self) -> Result<Vec<u8>, ByteErrorType> {
+        if !self.is_signed() {
+            return Err(ByteErrorType::ByteError("no signature".to_string()));
+        }
+
+        let data = match &self.data {
+            Data::None => return Err(ByteErrorType::ByteError("invalid data type".to_string())),
+            Data::Bytes(data) => data
+        };
+
+        let encoded_tags = if !self.tags.is_empty() {
+            self.tags.encode()?
+        } else {
+            Bytes::default()
+        };
+        let config = self.signature_type.get_config();
+        let length = 2u64
+            + config.sig_length as u64
+            + config.pub_length as u64
+            + 34
+            + 16
+            + encoded_tags.len() as u64
+            + data.len() as u64;
+        
+        let mut b = Vec::with_capacity(
+            TryInto::<usize>::try_into(length)
+                .map_err(|err| ByteErrorType::ByteError(format!("data length error - {}", err.to_string())))?
+        );
+
+        let sig_type: [u8; 2] = (self.signature_type.clone() as u16).to_le_bytes();
+        let target_presence_byte = if self.target.is_empty() {
+            &[0u8]
+        } else {
+            &[1u8]
+        };
+        let anchor_presence_byte = if self.anchor.is_empty() {
+            &[0u8]
+        } else {
+            &[1u8]
+        };
+        b.put(&sig_type[..]);
+        b.put(&self.signature[..]);
+        b.put(&self.owner[..]);
+        b.put(&target_presence_byte[..]);
+        b.put(&self.target[..]);
+        b.put(&anchor_presence_byte[..]);
+        b.put(&self.anchor[..]);
+        let number_of_tags = (self.tags.len() as u64).to_le_bytes();
+        let number_of_tags_bytes = (encoded_tags.len() as u64).to_le_bytes();
+        b.put(number_of_tags.as_slice());
+        b.put(number_of_tags_bytes.as_slice());
+        if !number_of_tags_bytes.is_empty() {
+            b.put(encoded_tags);
+        }
+
+        b.put(&data[..]);
+        Ok(b)
+    }
+
+    pub fn raw_id(&self) -> Vec<u8> {
+        let mut hasher = Sha256::new();
+        hasher.update(&self.signature);
+        hasher.finalize().to_vec()
+    }
+
+    pub fn id(&self) -> String {
+        let raw_id = self.raw_id();
+        base64_url::encode(&raw_id)
+    }
+
+    pub fn owner(&self) -> String {
+        base64_url::encode(&self.owner)
+    }
+
+    pub fn target(&self) -> String {
+        base64_url::encode(&self.target)
+    }
+
+    pub fn tags(&self) -> Vec<Tag> {
+        self.tags.clone()
+    }
+
+    pub fn data(&self) -> Option<String> {
+        match self.data {
+            Data::Bytes(data) => {
+                match String::from_utf8(data) {
+                    Ok(res) => Some(res),
+                    Err(e) => None
+                }
+            },
+            Data::None => None
+        }
+    }
+
+    pub fn signature(&self) -> String {
+        base64_url::encode(&self.signature)
+    }
+
+    pub fn anchor(&self) -> String {
+        base64_url::encode(&self.anchor)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ITEM_STR: &str = "AQB9q2yhsQlBHv2LOTIrtmKjw063S1DG0prKcq86DykIegmPnXOReXkWXwpqXt4YxTRw6Rw1jG7f1QFF5ReoJO2MrJmia9ymkTmnhamv3lsYYIotBC6U4Bmzo6IZiKmn2llJt0MDvCe8rxzG15vvff9bpnDIVflY_Dm9Y0dCH-w2Xg8rb2xLq-cM8SBoNRiYruwcwpahiHTjXcxboJKksZRXaI_E7_7vL1gWlMLqeYeF_uXqkth8_PGtZcqMA7pbTYcRzGki_rifGXKUIZKgSIRXTk54iboiqNzOklIFpDKDJpC9Xk_6ppSw_Xzs8S0KpR-veBL8TeURtGhrsDecu_36Pk2MMvdZedxiAg7bvQ9H_NZecoZcju-sQKZiE7haq9Nos3g6njh9IpXivGJ1k8tRLeox7hXOeynffzcXz1Vnz5c4Zxw8LKUbLygni49sflKyFTMnQ8sgDw00fPsuhrznq37-2OLhmYe-tIg-TEV3T4VNdqchzeRSFIv_l7ZJcxeFxcEgdq9aXMx2yzVhSInFuk_W8fJSbhPKX9cewbr4BA_XUNMReowLVcnjB_19iCWnivkVk9sz-QRbjuVL2IMqZePWcRdN5ncXRJoYv4F-Z4FfXDCFuyCD4UAtiQfdch-S4KvRf99DwKrZrMIF28MDdRFdE3ZGDs3FXcPuN8eMLoKBrkyfkM3J89W1GNvrcCNHSNzhF8oPItU4Qno7-x52ZIOAjfdFcXTYLQYU7Xfr6GKaRByemPrkbkrJpdB8RQREt3rQRDNGRQ0jnbPn62PQugvss98JZn9D4ScNusbbgKMihj4MqfXE2mt7Ab9ewx5d01d-Mwf3D6mGz_ERBJgJo8b119bRXdNvgUDJC58NFd4chEOUF4mbyj2pZB9P7fx22yEvV7y6DNzuKvk02YQt7TwL7sdxH1PT63CYJx0tlVGGDvJhGKUQwOfDaXHFMjuuUlXa_klTJT5wEb78aAyh33rw0n9wpOakTIk2KgekbJAzVWCT0BfLrrOhKs3556_d--2mLmcLOONosBjSLokuvtyrTOX7btKRf6Zl5l3wtxsFaPgO6M3Qy9UR46AtK76XSFQd9kcDf_Qj1FyronJS_enQFWYn5Um97mDnYT9SJwMpDFS_FYBTKlsNhsVy11EW5kKuo6mTRlfebJa9CQv-NzbUajd7ulAcM4VNWYt-KbbhVZtUUUxgDvXJdlwRSYR5U8JwSze3sfatb5mbds-EAS-tT7grwrvTb4wRz20e9ARtBg6kC_x8QujHmFORJ97zrFlnnunPbsWgwWz8bfT9RMFy5xUE1KDCtnJqp-M3FoWwQc4sREIyCl7Q6JTq_slPe-Xwt9C5oquj4e_SoOuTAfqDPAmIG6rEXKSN7RP3KRjN5IA5Wpp2I0hgOJ6bT2qNAAUAAAAAAAAASAAAAAAAAAAKGkRhdGEtUHJvdG9jb2wEYW8QZnVuY3Rpb24GcmF3GkRhdGEtUHJvdG9jb2wEYW8OYW8tdHlwZQ5tZXNzYWdlBlNESwRhbwA2NTgz";
+
+    #[test]
+    fn test_byte_conversion() {
+        let d_item_string = ITEM_STR.to_string();
+        let item_bytes = base64_url::decode(&d_item_string).expect("failed to encode data item");
+        let data_item = DataItem::from_bytes(item_bytes).expect("failed to build data item");
+        let reconverted_string = base64_url::encode(&data_item.as_bytes().expect("failed to convert to bytes"));
+        assert_eq!(d_item_string, reconverted_string);
+    }
+
+    #[test]
+    fn test_fields() {
+        let d_item_string = ITEM_STR.to_string();
+        let item_bytes = base64_url::decode(&d_item_string).expect("failed to encode data item");
+        let data_item = DataItem::from_bytes(item_bytes).expect("failed to build data item");
+        assert_eq!("6oYAxVAnH8yKsZKpMgHSbRv7uVWey68PAqYuSXeZBbg".to_string(), data_item.id());
+        assert_eq!("goGuTJ-Qzcnz1bUY2-twI0dI3OEXyg8i1ThCejv7HnZkg4CN90VxdNgtBhTtd-voYppEHJ6Y-uRuSsml0HxFBES3etBEM0ZFDSOds-frY9C6C-yz3wlmf0PhJw26xtuAoyKGPgyp9cTaa3sBv17DHl3TV34zB_cPqYbP8REEmAmjxvXX1tFd02-BQMkLnw0V3hyEQ5QXiZvKPalkH0_t_HbbIS9XvLoM3O4q-TTZhC3tPAvux3EfU9PrcJgnHS2VUYYO8mEYpRDA58NpccUyO65SVdr-SVMlPnARvvxoDKHfevDSf3Ck5qRMiTYqB6RskDNVYJPQF8uus6Eqzfnnr9377aYuZws442iwGNIuiS6-3KtM5ftu0pF_pmXmXfC3GwVo-A7ozdDL1RHjoC0rvpdIVB32RwN_9CPUXKuiclL96dAVZiflSb3uYOdhP1InAykMVL8VgFMqWw2GxXLXURbmQq6jqZNGV95slr0JC_43NtRqN3u6UBwzhU1Zi34ptuFVm1RRTGAO9cl2XBFJhHlTwnBLN7ex9q1vmZt2z4QBL61PuCvCu9NvjBHPbR70BG0GDqQL_HxC6MeYU5En3vOsWWee6c9uxaDBbPxt9P1EwXLnFQTUoMK2cmqn4zcWhbBBzixEQjIKXtDolOr-yU975fC30Lmiq6Ph79Kg65M".to_string(), data_item.owner());
+        assert_eq!("-oM8CYgbqsRcpI3tE_cpGM3kgDlamnYjSGA4nptPao0".to_string(), data_item.target());
+    }
+
+    #[test]
+    fn test_is_signed() {
+        let d_item_string = ITEM_STR.to_string();
+        let item_bytes = base64_url::decode(&d_item_string).expect("failed to encode data item");
+        let data_item = DataItem::from_bytes(item_bytes).expect("failed to build data item");
+        assert_eq!(data_item.is_signed(), true);
+    }
+
+    #[test]
+    fn test_bundle() {
+        let d_item_string = ITEM_STR.to_string();
+        let item_bytes = base64_url::decode(&d_item_string).expect("failed to encode data item");
+        let data_item = DataItem::from_bytes(item_bytes).expect("failed to build data item");
+        let tags = vec![
+            Tag::new(&"Bundle-Format".to_string(), &"binary".to_string()),
+            Tag::new(&"Bundle-Version".to_string(), &"2.0.0".to_string()),
+        ];
+        let mut data_bundle = DataBundle::new(tags);
+        data_bundle.add_item(data_item);
+        assert_eq!(data_bundle.items.len(), 1);
+        let bundle_bytes = data_bundle.to_bytes();
+        assert!(bundle_bytes.is_ok(), "Bundling failed");
     }
 }

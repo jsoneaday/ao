@@ -12,5 +12,8 @@ pub mod test_utils;
 pub mod domain {
     pub mod core {
         pub mod bytes;
+        pub mod builder;
+        pub mod dal;
+        pub mod json;
     }
 }

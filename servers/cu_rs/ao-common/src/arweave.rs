@@ -1,11 +1,8 @@
-use ar_bundles::bundle_item::BundleItemFn;
-use ar_bundles::interface_jwk::JWKInterface;
-use ar_bundles::signing::{signer::SignerMaker, chains::arweave_signer::ArweaveSigner};
-use ar_bundles::tags::Tag;
-use ar_bundles::data_item::DataItem;
+use bundlr_sdk::tags::Tag;
+use crate::domain::core::bytes::Data;
+use crate::domain::core::bytes::DataItem;
 use arweave_rs::Arweave;
 use arweave_rs::ArweaveBuilder;
-use ar_bundles::ar_data_create::{create_data, Data, DataItemCreateOptions};
 use rand::Rng;
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{Client, Error, Response, Url};
@@ -63,7 +60,7 @@ impl InternalArweave {
     }
 
     /// A DataItem allows for uploading of a bundled item without sender themselves having to pay for it
-    pub fn build_sign_dataitem(&self, data: Data, anchor: Option<[u8;32]>, tags: Vec<Tag>) -> Result<DataItem, QueryGatewayErrors> {
+    pub fn build_sign_dataitem(&self, data: Vec<u8>, anchor: Option<[u8;32]>, tags: Vec<Tag>) -> Result<DataItem, QueryGatewayErrors> {
         let jwk_str = std::fs::read_to_string(self.wallet_path.as_str()).unwrap();
         let jwk = serde_json::from_str::<JWKInterface>(&jwk_str).unwrap();
         let signer = ArweaveSigner::new(jwk, &self.wallet_path);
@@ -224,7 +221,7 @@ struct ProcessIds {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::{get_gateway_url, get_uploader_url, get_wallet_file};
+    use crate::test_utils::{get_uploader_url, get_wallet_file};
 
     #[tokio::test]
     async fn test_new() {
