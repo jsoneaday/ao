@@ -22,7 +22,7 @@ impl From<&str> for ByteErrorType {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct DataBundle {
     pub items: Vec<DataItem>,
     pub tags: Vec<Tag>
@@ -78,13 +78,13 @@ fn long_to_32_byte_array(value: u64) -> Result<Vec<u8>, ByteErrorType> {
     long_to_n_byte_array(32, value)
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum Data {
     None,
     Bytes(Vec<u8>)
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct DataItem {
     signature_type: SignerMap,
     pub signature: Vec<u8>,
@@ -102,7 +102,7 @@ pub struct Config {
     pub sig_name: String
 }
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum SignerMap {
     None = -1,
     Arweave = 1,
@@ -222,7 +222,8 @@ impl DataItem {
                     DeepHashChunk::Chunk(self.owner.to_vec().into()),
                     DeepHashChunk::Chunk(self.target.to_vec().into()),
                     DeepHashChunk::Chunk(self.anchor.to_vec().into()),
-                    DeepHashChunk::Chunk(encoded_tags.clone())
+                    DeepHashChunk::Chunk(encoded_tags.clone()),
+                    data_chunk
                 ]))
             }
         }
@@ -407,11 +408,11 @@ impl DataItem {
     }
 
     pub fn data(&self) -> Option<String> {
-        match self.data {
+        match &self.data {
             Data::Bytes(data) => {
-                match String::from_utf8(data) {
+                match String::from_utf8(data.clone()) {
                     Ok(res) => Some(res),
-                    Err(e) => None
+                    Err(_) => None
                 }
             },
             Data::None => None

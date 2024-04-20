@@ -6,7 +6,7 @@ pub enum QueryGatewayErrors {
     Network(Option<Box<dyn std::error::Error + 'static + Send>>),    
     Serialization(Option<Box<dyn std::error::Error + 'static + Send>>),
     WalletError(arweave_rs::error::Error),
-    BundlerFailure(bundlr_sdk::error::BundlrError)
+    BundlerFailure(ar_bundles::errors::ArBundleErrors)
 }
 
 impl Error for QueryGatewayErrors {
