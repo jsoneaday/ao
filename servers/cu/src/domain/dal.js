@@ -5,13 +5,15 @@ import { blockSchema, evaluationSchema, processSchema, moduleSchema, rawTagSchem
 // Arweave
 
 export const loadTransactionMetaSchema = z.function()
-  .args(z.string())
+  // Zod function doesn't allow optional arguments
+  // https://github.com/colinhacks/zod/issues/2990
+  // .args(z.string(), z.any())
   .returns(z.promise(
     z.object({
       owner: z.object({
         address: z.string()
       }),
-      tags: z.array(rawTagSchema)
+      tags: z.array(rawTagSchema).default([])
     }).passthrough()
   ))
 
@@ -60,7 +62,7 @@ export const evaluatorSchema = z.function()
   .args(z.any())
   .returns(z.promise(z.any()))
 
-// DB
+// Evaluation
 
 export const findEvaluationSchema = z.function()
   .args(z.object({
@@ -71,18 +73,8 @@ export const findEvaluationSchema = z.function()
   }))
   .returns(z.promise(evaluationSchema))
 
-export const findLatestEvaluationsSchema = z.function()
-  .args(z.object({
-    processId: z.string(),
-    to: z.coerce.number().nullish(),
-    ordinate: z.coerce.string().nullish(),
-    cron: z.string().nullish(),
-    limit: z.number().default(1)
-  }))
-  .returns(z.promise(z.array(evaluationSchema)))
-
 export const saveEvaluationSchema = z.function()
-  .args(evaluationSchema.extend({ deepHash: z.string().nullish() }))
+  .args(evaluationSchema.extend({ deepHash: z.string().nullish(), isAssignment: z.boolean() }))
   .returns(z.promise(z.any()))
 
 export const findEvaluationsSchema = z.function()
@@ -104,6 +96,27 @@ export const findEvaluationsSchema = z.function()
   }))
   .returns(z.promise(z.array(evaluationSchema)))
 
+// Messages
+
+export const findMessageBeforeSchema = z.function()
+  .args(z.object({
+    messageId: z.string().nullish(),
+    deepHash: z.string().nullish(),
+    isAssignment: z.boolean(),
+    processId: z.string(),
+    epoch: z.coerce.number(),
+    nonce: z.coerce.number()
+  }))
+  /**
+   * Our business logic doesn't use the output,
+   * only the presence or absence of the record,
+   *
+   * So we don't need to enforce a shape to return here
+   */
+  .returns(z.promise(z.any()))
+
+// Blocks
+
 export const saveBlocksSchema = z.function()
   .args(z.array(blockSchema))
   .returns(z.promise(z.any()))
@@ -114,22 +127,6 @@ export const findBlocksSchema = z.function()
     maxTimestamp: z.number()
   }))
   .returns(z.promise(z.array(blockSchema)))
-
-export const findMessageHashBeforeSchema = z.function()
-  .args(z.object({
-    messageHash: z.string().nullish(),
-    processId: z.string(),
-    timestamp: z.coerce.number(),
-    ordinate: z.coerce.string()
-  }))
-  /**
-   * Our business logic doesn't use the output of findMessageHash,
-   * only the presence or absence of the document,
-   *
-   * So we don't need to enforce a shape to return here,
-   * as long as it's a document (an object)
-   */
-  .returns(z.promise(z.any()))
 
 // SU
 

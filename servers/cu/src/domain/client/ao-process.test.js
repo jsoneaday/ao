@@ -18,21 +18,19 @@ describe('ao-process', () => {
       const now = Math.floor(new Date().getTime() / 1000)
       const findProcess = findProcessSchema.implement(
         findProcessWith({
-          pouchDb: {
-            get: async () => ({
-              _id: 'proc-process-123',
-              processId: 'process-123',
+          db: {
+            query: async () => [{
+              id: 'process-123',
               owner: 'woohoo',
-              tags: [{ name: 'foo', value: 'bar' }],
+              tags: JSON.stringify([{ name: 'foo', value: 'bar' }]),
               signature: 'sig-123',
               anchor: null,
               data: 'data-123',
-              block: {
+              block: JSON.stringify({
                 height: 123,
                 timestamp: now
-              },
-              type: 'process'
-            })
+              })
+            }]
           },
           logger
         })
@@ -56,8 +54,8 @@ describe('ao-process', () => {
     test('return 404 status if not found', async () => {
       const findProcess = findProcessSchema.implement(
         findProcessWith({
-          pouchDb: {
-            get: async () => { throw { status: 404 } }
+          db: {
+            query: async () => []
           },
           logger
         })
@@ -75,8 +73,8 @@ describe('ao-process', () => {
     test('bubble error', async () => {
       const findProcess = findProcessSchema.implement(
         findProcessWith({
-          pouchDb: {
-            get: async () => { throw { status: 500 } }
+          db: {
+            query: async () => { throw { status: 500 } }
           },
           logger
         })
@@ -93,22 +91,20 @@ describe('ao-process', () => {
     test('save the process', async () => {
       const saveProcess = saveProcessSchema.implement(
         saveProcessWith({
-          pouchDb: {
-            put: (doc) => {
-              assert.deepStrictEqual(doc, {
-                _id: 'proc-process-123',
-                processId: 'process-123',
-                owner: 'woohoo',
-                tags: [{ name: 'foo', value: 'bar' }],
-                signature: 'sig-123',
-                anchor: null,
-                data: 'data-123',
-                block: {
+          db: {
+            run: ({ parameters }) => {
+              assert.deepStrictEqual(parameters, [
+                'process-123',
+                'sig-123',
+                'data-123',
+                null,
+                'woohoo',
+                JSON.stringify([{ name: 'foo', value: 'bar' }]),
+                JSON.stringify({
                   height: 123,
                   timestamp: now
-                },
-                type: 'process'
-              })
+                })
+              ])
               return Promise.resolve(true)
             }
           },
@@ -133,8 +129,10 @@ describe('ao-process', () => {
     test('noop if the process already exists', async () => {
       const saveProcess = saveProcessSchema.implement(
         saveProcessWith({
-          pouchDb: {
-            put: async () => { throw { status: 409 } }
+          db: {
+            run: async ({ sql }) => {
+              assert.ok(sql.trim().startsWith('INSERT OR IGNORE'))
+            }
           },
           logger
         })
@@ -309,6 +307,7 @@ describe('ao-process', () => {
         readCheckpointFile: async () => assert.fail('should not call if found in cache'),
         address: async () => assert.fail('should not call if found in cache'),
         queryGateway: async () => assert.fail('should not call if found in cache'),
+        queryCheckpointGateway: async () => assert.fail('should not call if found in cache'),
         loadTransactionData: async () => assert.fail('should not call if found in cache'),
         logger,
         PROCESS_IGNORE_ARWEAVE_CHECKPOINTS: []
@@ -330,6 +329,8 @@ describe('ao-process', () => {
           ordinate: cachedEval.ordinate
         })
       })
+
+      test.todo('should omit the memory if omitMemory is received', async () => {})
     })
 
     describe('checkpoint cached in a file', () => {
@@ -356,6 +357,7 @@ describe('ao-process', () => {
         },
         address: async () => assert.fail('should not call if found in file checkpoint'),
         queryGateway: async () => assert.fail('should not call if found in file checkpoint'),
+        queryCheckpointGateway: async () => assert.fail('should not call if file checkpoint'),
         loadTransactionData: async (id) => {
           assert.equal(id, 'tx-123')
           return new Response(Readable.toWeb(Readable.from(zipped)))
@@ -425,9 +427,11 @@ describe('ao-process', () => {
 
         assert.deepStrictEqual(res.Memory, Memory)
       })
+
+      test.todo('should omit the memory if omitMemory is received', async () => {})
     })
 
-    describe('checkpoint retrieved from the gateway', () => {
+    describe('checkpoint retrieved from the checkpoint gateway', () => {
       const edges = [
         {
           node: {
@@ -458,6 +462,7 @@ describe('ao-process', () => {
 
           return { data: { transactions: { edges } } }
         },
+        queryCheckpointGateway: async () => assert.fail('should not call if default gateway is successful'),
         loadTransactionData: async (id) => {
           assert.equal(id, 'tx-123')
           return new Response(Readable.toWeb(Readable.from(zipped)))
@@ -573,7 +578,7 @@ describe('ao-process', () => {
         const findProcessMemoryBefore = findProcessMemoryBeforeWith({
           ...deps,
           queryGateway: async () => {
-            if (count++ < 3) throw new Error('timeout')
+            if (count++ < 2) throw new Error('timeout')
 
             return {
               data: {
@@ -602,6 +607,48 @@ describe('ao-process', () => {
 
         assert.deepStrictEqual(res.ordinate, '12')
       })
+
+      test('should fallback to Checkpoint gateway if default gateway reaches max retries', async () => {
+        const findProcessMemoryBefore = findProcessMemoryBeforeWith({
+          ...deps,
+          queryGateway: async () => { throw new Error('timeout') },
+          queryCheckpointGateway: async ({ query, variables }) => {
+            assert.ok(query)
+            assert.deepStrictEqual(variables, {
+              owner: 'address-123',
+              processId: PROCESS,
+              limit: 50
+            })
+
+            return {
+              data: {
+                transactions: {
+                  edges: [
+                    {
+                      ...edges[0],
+                      node: {
+                        ...edges[0].node,
+                        tags: [
+                          { name: 'Timestamp', value: `${cachedEval.timestamp + 1000}` },
+                          { name: 'Nonce', value: '12' },
+                          { name: 'Block-Height', value: `${cachedEval.blockHeight}` },
+                          { name: 'Content-Encoding', value: `${cachedEval.encoding}` }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        })
+
+        const res = await findProcessMemoryBefore(target)
+
+        assert.deepStrictEqual(res.ordinate, '12')
+      })
+
+      test.todo('should omit the memory if omitMemory is received', async () => {})
     })
 
     describe('cold start', () => {
@@ -612,16 +659,8 @@ describe('ao-process', () => {
         findCheckpointFileBefore: async () => undefined,
         readCheckpointFile: async () => assert.fail('should not call if no file checkpoint is found'),
         address: async () => 'address-123',
-        queryGateway: async ({ query, variables }) => {
-          assert.ok(query)
-          assert.deepStrictEqual(variables, {
-            owner: 'address-123',
-            processId: PROCESS,
-            limit: 50
-          })
-
-          return { data: { transactions: { edges: [] } } }
-        },
+        queryCheckpointGateway: async ({ query, variables }) => ({ data: { transactions: { edges: [] } } }),
+        queryGateway: async ({ query, variables }) => ({ data: { transactions: { edges: [] } } }),
         loadTransactionData: async (id) => {
           assert.equal(id, 'tx-123')
           return new Response(Readable.toWeb(Readable.from(zipped)))
@@ -700,4 +739,5 @@ describe('ao-process', () => {
   })
 
   describe.todo('saveLatestProcessMemoryWith')
+  describe.todo('saveCheckpointWith')
 })

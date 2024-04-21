@@ -14,6 +14,7 @@ table! {
         row_id -> Int4,
         process_id -> Varchar,
         message_id -> Varchar,
+        assignment_id -> Nullable<Varchar>,
         message_data -> Jsonb,
         epoch -> Int4,
         nonce -> Int4,
@@ -39,9 +40,4 @@ table! {
     }
 }
 
-allow_tables_to_appear_in_same_query!(
-    processes,
-    messages,
-    schedulers,
-    process_schedulers,
-);
+allow_tables_to_appear_in_same_query!(processes, messages, schedulers, process_schedulers,);

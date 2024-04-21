@@ -7,10 +7,11 @@ import Dataloader from 'dataloader'
 import fastGlob from 'fast-glob'
 import workerpool from 'workerpool'
 import { connect as schedulerUtilsConnect } from '@permaweb/ao-scheduler-utils'
+import { fromPromise } from 'hyper-async'
 
 // Precanned clients to use for OOTB apis
 import * as ArweaveClient from './client/arweave.js'
-import * as PouchDbClient from './client/pouchdb.js'
+import * as SqliteClient from './client/sqlite.js'
 import * as AoSuClient from './client/ao-su.js'
 import * as WasmClient from './client/wasm.js'
 import * as AoProcessClient from './client/ao-process.js'
@@ -37,7 +38,7 @@ export const createApis = async (ctx) => {
 
   const { locate } = schedulerUtilsConnect({
     cacheSize: 100,
-    GATEWAY_URL: ctx.GATEWAY_URL,
+    GRAPHQL_URL: ctx.GRAPHQL_URL,
     followRedirects: true
   })
   const locateDataloader = new Dataloader(async (params) => {
@@ -56,12 +57,8 @@ export const createApis = async (ctx) => {
     cacheKeyFn: ({ processId }) => processId
   })
 
-  const pouchDb = await PouchDbClient.createPouchDbClient({
-    logger: ctx.logger,
-    mode: ctx.DB_MODE,
-    maxListeners: ctx.DB_MAX_LISTENERS,
-    url: ctx.DB_URL
-  })
+  const DB_URL = `${ctx.DB_URL}.sqlite`
+  const sqlite = await SqliteClient.createSqliteClient({ url: DB_URL, bootstrap: true })
 
   const workerPool = workerpool.pool(join(__dirname, 'client', 'worker.js'), {
     maxWorkers: ctx.WASM_EVALUATION_MAX_WORKERS,
@@ -75,7 +72,8 @@ export const createApis = async (ctx) => {
             WASM_MODULE_CACHE_MAX_SIZE: ctx.WASM_MODULE_CACHE_MAX_SIZE,
             WASM_INSTANCE_CACHE_MAX_SIZE: ctx.WASM_INSTANCE_CACHE_MAX_SIZE,
             WASM_BINARY_FILE_DIRECTORY: ctx.WASM_BINARY_FILE_DIRECTORY,
-            GATEWAY_URL: ctx.GATEWAY_URL,
+            ARWEAVE_URL: ctx.ARWEAVE_URL,
+            DB_URL,
             id: workerId
           }
         }
@@ -88,6 +86,9 @@ export const createApis = async (ctx) => {
 
   ctx.logger('Process Snapshot creation is set to "%s"', !ctx.DISABLE_PROCESS_CHECKPOINT_CREATION)
   ctx.logger('Ignoring Arweave Checkpoints for processes [ %s ]', ctx.PROCESS_IGNORE_ARWEAVE_CHECKPOINTS.join(', '))
+  ctx.logger('Restricting processes [ %s ]', ctx.RESTRICT_PROCESSES.join(', '))
+  ctx.logger('Allowing only processes [ %s ]', ctx.ALLOW_PROCESSES.join(', '))
+  ctx.logger('Max worker threads set to %s', ctx.WASM_EVALUATION_MAX_WORKERS)
 
   const stats = statsWith({
     loadWorkerStats: () => workerPool.stats(),
@@ -103,7 +104,8 @@ export const createApis = async (ctx) => {
 
   const saveCheckpoint = AoProcessClient.saveCheckpointWith({
     address,
-    queryGateway: ArweaveClient.queryGatewayWith({ fetch: ctx.fetch, GATEWAY_URL: ctx.GATEWAY_URL, logger: ctx.logger }),
+    queryGateway: ArweaveClient.queryGatewayWith({ fetch: ctx.fetch, GRAPHQL_URL: ctx.GRAPHQL_URL, logger: ctx.logger }),
+    queryCheckpointGateway: ArweaveClient.queryGatewayWith({ fetch: ctx.fetch, GRAPHQL_URL: ctx.CHECKPOINT_GRAPHQL_URL, logger: ctx.logger }),
     hashWasmMemory: WasmClient.hashWasmMemory,
     buildAndSignDataItem: ArweaveClient.buildAndSignDataItemWith({ WALLET: ctx.WALLET }),
     uploadDataItem: ArweaveClient.uploadDataItemWith({ UPLOADER_URL: ctx.UPLOADER_URL, fetch: ctx.fetch, logger: ctx.logger }),
@@ -133,33 +135,13 @@ export const createApis = async (ctx) => {
         })
   })
 
-  /**
-   * TODO: determine a way to hoist this event listener to a dirtier level,
-   * then simply call something like a "drainWasmMemoryCache()" api
-   *
-   * For now, just adding another listener
-   */
-  process.on('SIGTERM', () => {
-    ctx.logger('Recevied SIGTERM. Attempting to Checkpoint all Processes currently in WASM heap cache...')
-    wasmMemoryCache.lru.forEach((value) => {
-      saveCheckpoint({ Memory: value.Memory, ...value.evaluation })
-        .catch((err) => {
-          ctx.logger(
-            'Error occurred when creating Checkpoint for evaluation "%j". Skipping...',
-            value.evaluation,
-            err
-          )
-        })
-    })
-  })
-
   const sharedDeps = (logger) => ({
-    loadTransactionMeta: ArweaveClient.loadTransactionMetaWith({ fetch: ctx.fetch, GATEWAY_URL: ctx.GATEWAY_URL, logger }),
-    loadTransactionData: ArweaveClient.loadTransactionDataWith({ fetch: ctx.fetch, GATEWAY_URL: ctx.GATEWAY_URL, logger }),
-    findProcess: AoProcessClient.findProcessWith({ pouchDb, logger }),
+    loadTransactionMeta: ArweaveClient.loadTransactionMetaWith({ fetch: ctx.fetch, GRAPHQL_URL: ctx.GRAPHQL_URL, logger }),
+    loadTransactionData: ArweaveClient.loadTransactionDataWith({ fetch: ctx.fetch, ARWEAVE_URL: ctx.ARWEAVE_URL, logger }),
+    findProcess: AoProcessClient.findProcessWith({ db: sqlite, logger }),
     findProcessMemoryBefore: AoProcessClient.findProcessMemoryBeforeWith({
       cache: wasmMemoryCache,
-      loadTransactionData: ArweaveClient.loadTransactionDataWith({ fetch: ctx.fetch, GATEWAY_URL: ctx.GATEWAY_URL, logger }),
+      loadTransactionData: ArweaveClient.loadTransactionDataWith({ fetch: ctx.fetch, ARWEAVE_URL: ctx.ARWEAVE_URL, logger }),
       findCheckpointFileBefore: AoProcessClient.findCheckpointFileBeforeWith({
         DIR: ctx.PROCESS_CHECKPOINT_FILE_DIRECTORY,
         glob: fastGlob
@@ -169,7 +151,8 @@ export const createApis = async (ctx) => {
         readFile
       }),
       address,
-      queryGateway: ArweaveClient.queryGatewayWith({ fetch: ctx.fetch, GATEWAY_URL: ctx.GATEWAY_URL, logger }),
+      queryGateway: ArweaveClient.queryGatewayWith({ fetch: ctx.fetch, GRAPHQL_URL: ctx.GRAPHQL_URL, logger }),
+      queryCheckpointGateway: ArweaveClient.queryGatewayWith({ fetch: ctx.fetch, GRAPHQL_URL: ctx.CHECKPOINT_GRAPHQL_URL, logger }),
       PROCESS_IGNORE_ARWEAVE_CHECKPOINTS: ctx.PROCESS_IGNORE_ARWEAVE_CHECKPOINTS,
       logger
     }),
@@ -179,14 +162,14 @@ export const createApis = async (ctx) => {
       saveCheckpoint,
       logger
     }),
-    saveProcess: AoProcessClient.saveProcessWith({ pouchDb, logger }),
-    findEvaluation: AoEvaluationClient.findEvaluationWith({ pouchDb, logger }),
-    saveEvaluation: AoEvaluationClient.saveEvaluationWith({ pouchDb, logger }),
-    findBlocks: AoBlockClient.findBlocksWith({ pouchDb, logger }),
-    saveBlocks: AoBlockClient.saveBlocksWith({ pouchDb, logger }),
-    loadBlocksMeta: AoBlockClient.loadBlocksMetaWith({ fetch: ctx.fetch, GATEWAY_URL: ctx.GATEWAY_URL, pageSize: 90, logger }),
-    findModule: AoModuleClient.findModuleWith({ pouchDb, logger }),
-    saveModule: AoModuleClient.saveModuleWith({ pouchDb, logger }),
+    saveProcess: AoProcessClient.saveProcessWith({ db: sqlite, logger }),
+    findEvaluation: AoEvaluationClient.findEvaluationWith({ db: sqlite, logger }),
+    saveEvaluation: AoEvaluationClient.saveEvaluationWith({ db: sqlite, logger }),
+    findBlocks: AoBlockClient.findBlocksWith({ db: sqlite, logger }),
+    saveBlocks: AoBlockClient.saveBlocksWith({ db: sqlite, logger }),
+    loadBlocksMeta: AoBlockClient.loadBlocksMetaWith({ fetch: ctx.fetch, GRAPHQL_URL: ctx.GRAPHQL_URL, pageSize: 90, logger }),
+    findModule: AoModuleClient.findModuleWith({ db: sqlite, logger }),
+    saveModule: AoModuleClient.saveModuleWith({ db: sqlite, logger }),
     loadEvaluator: AoModuleClient.evaluatorWith({
       /**
        * Evaluation will invoke a worker available in the worker pool
@@ -194,13 +177,22 @@ export const createApis = async (ctx) => {
       evaluate: (...args) => workerPool.exec('evaluate', args),
       logger
     }),
-    findMessageHashBefore: AoEvaluationClient.findMessageHashBeforeWith({ pouchDb, logger }),
+    findMessageBefore: AoEvaluationClient.findMessageBeforeWith({ db: sqlite, logger }),
     loadTimestamp: AoSuClient.loadTimestampWith({ fetch: ctx.fetch, logger }),
     loadProcess: AoSuClient.loadProcessWith({ fetch: ctx.fetch, logger }),
     loadMessages: AoSuClient.loadMessagesWith({ fetch: ctx.fetch, pageSize: 1000, logger }),
     locateProcess: locateDataloader.load.bind(locateDataloader),
-    doesExceedModuleMaxMemory: WasmClient.doesExceedModuleMaxMemoryWith({ PROCESS_WASM_MEMORY_MAX_LIMIT: ctx.PROCESS_WASM_MEMORY_MAX_LIMIT }),
-    doesExceedModuleMaxCompute: WasmClient.doesExceedModuleMaxComputeWith({ PROCESS_WASM_COMPUTE_MAX_LIMIT: ctx.PROCESS_WASM_COMPUTE_MAX_LIMIT }),
+    isModuleMemoryLimitSupported: WasmClient.isModuleMemoryLimitSupportedWith({ PROCESS_WASM_MEMORY_MAX_LIMIT: ctx.PROCESS_WASM_MEMORY_MAX_LIMIT }),
+    isModuleComputeLimitSupported: WasmClient.isModuleComputeLimitSupportedWith({ PROCESS_WASM_COMPUTE_MAX_LIMIT: ctx.PROCESS_WASM_COMPUTE_MAX_LIMIT }),
+    isModuleFormatSupported: WasmClient.isModuleFormatSupportedWith(),
+    /**
+     * This is not configurable, as Load message support will be dictated by the protocol,
+     * which proposes Assignments as a more flexible and extensible solution that also includes
+     * Load Message use-cases
+     *
+     * But for now, supporting Load messages in perpetuity.
+     */
+    AO_LOAD_MAX_BLOCK: Number.MAX_SAFE_INTEGER,
     logger
   })
   /**
@@ -233,16 +225,33 @@ export const createApis = async (ctx) => {
   const readCronResultsLogger = ctx.logger.child('readCronResults')
   const readCronResults = readCronResultsWith({
     ...sharedDeps(readCronResultsLogger),
-    findEvaluations: AoEvaluationClient.findEvaluationsWith({ pouchDb, logger: readCronResultsLogger })
+    findEvaluations: AoEvaluationClient.findEvaluationsWith({ db: sqlite, logger: readCronResultsLogger })
   })
 
   const readResultsLogger = ctx.logger.child('readResults')
   const readResults = readResultsWith({
     ...sharedDeps(readResultsLogger),
-    findEvaluations: AoEvaluationClient.findEvaluationsWith({ pouchDb, logger: readResultsLogger })
+    findEvaluations: AoEvaluationClient.findEvaluationsWith({ db: sqlite, logger: readResultsLogger })
+  })
+
+  const checkpointWasmMemoryCache = fromPromise(async () => {
+    const promises = []
+    wasmMemoryCache.lru.forEach((value) => {
+      promises.push(
+        saveCheckpoint({ Memory: value.Memory, ...value.evaluation })
+          .catch((err) => {
+            ctx.logger(
+              'Error occurred when creating Checkpoint for evaluation "%j". Skipping...',
+              value.evaluation,
+              err
+            )
+          })
+      )
+    })
+    await Promise.allSettled(promises)
   })
 
   const healthcheck = healthcheckWith({ walletAddress: address })
 
-  return { stats, pendingReadStates, readState, dryRun, readResult, readResults, readCronResults, healthcheck }
+  return { stats, pendingReadStates, readState, dryRun, readResult, readResults, readCronResults, checkpointWasmMemoryCache, healthcheck }
 }

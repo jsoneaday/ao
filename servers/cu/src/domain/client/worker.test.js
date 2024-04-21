@@ -13,22 +13,34 @@ const logger = createLogger('ao-cu:worker')
 describe('worker', async () => {
   process.env.NO_WORKER = '1'
 
+  const moduleOptions = {
+    format: 'wasm32-unknown-emscripten',
+    inputEncoding: 'JSON-1',
+    outputEncoding: 'JSON-1',
+    memoryLimit: 524_288_000, // in bytes
+    computeLimit: 9_000_000_000_000,
+    extensions: []
+  }
+
   describe('evaluateWith', async () => {
     describe('output', async () => {
       let evaluate
       const wasmInstanceCache = new LRUCache({ max: 1 })
       before(async () => {
         evaluate = (await import('./worker.js')).evaluateWith({
+          saveEvaluation: async (evaluation) => evaluation,
           wasmInstanceCache,
           wasmModuleCache: new LRUCache({ max: 1 }),
           readWasmFile: async () => createReadStream('./test/processes/happy/process.wasm'),
           writeWasmFile: async () => true,
           streamTransactionData: async () => assert.fail('should not call if readWasmFile'),
-          bootstrapWasmInstance: (wasmModule, gas, memLimit) => AoLoader((info, receiveInstance) => {
-            assert.equal(gas, args.gas)
-            assert.equal(memLimit, args.memLimit)
-            return WebAssembly.instantiate(wasmModule, info).then(receiveInstance)
-          }),
+          bootstrapWasmInstance: (wasmModule, _moduleOptions) => {
+            assert.deepStrictEqual(_moduleOptions, moduleOptions)
+            return AoLoader(
+              (info, receiveInstance) => WebAssembly.instantiate(wasmModule, info).then(receiveInstance),
+              _moduleOptions
+            )
+          },
           logger
         })
       })
@@ -38,10 +50,14 @@ describe('worker', async () => {
       const args = {
         streamId: 'stream-123',
         moduleId: 'module-123',
-        gas: 9_000_000_000_000,
-        memLimit: 9_000_000_000_000,
-        name: 'message 123',
+        moduleOptions,
         processId: 'process-123',
+        noSave: false,
+        name: 'message 123',
+        deepHash: undefined,
+        cron: undefined,
+        ordinate: '1',
+        isAssignment: false,
         Memory: null,
         message: {
           Id: 'message-123',
@@ -75,6 +91,11 @@ describe('worker', async () => {
         }
         const output = await evaluate(args)
         assert.deepStrictEqual(output.Messages, [expectedMessage])
+      })
+
+      test('returns assignments', async () => {
+        const output = await evaluate(args)
+        assert.deepStrictEqual(output.Assignments, [])
       })
 
       test('returns spawns', async () => {
@@ -150,18 +171,93 @@ describe('worker', async () => {
       })
     })
 
+    describe('save the evaluation', () => {
+      const deps = {
+        saveEvaluation: async (evaluation) => evaluation,
+        wasmInstanceCache: new LRUCache({ max: 1 }),
+        wasmModuleCache: new LRUCache({ max: 1 }),
+        readWasmFile: async () => createReadStream('./test/processes/sad/process.wasm'),
+        writeWasmFile: async () => true,
+        streamTransactionData: async () => assert.fail('should not call if readWasmFile'),
+        bootstrapWasmInstance: (wasmModule, _moduleOptions) => {
+          assert.deepStrictEqual(_moduleOptions, moduleOptions)
+          return AoLoader(
+            (info, receiveInstance) => WebAssembly.instantiate(wasmModule, info).then(receiveInstance),
+            _moduleOptions
+          )
+        },
+        logger
+      }
+
+      const args = {
+        streamId: 'stream-123',
+        moduleId: 'module-123',
+        moduleOptions,
+        processId: 'process-123',
+        noSave: false,
+        name: 'message 123',
+        deepHash: undefined,
+        cron: undefined,
+        ordinate: '1',
+        isAssignment: false,
+        Memory: null,
+        message: {
+          Id: 'message-123',
+          Timestamp: 1702846520559,
+          Owner: 'owner-123',
+          Tags: [
+            { name: 'function', value: 'hello' }
+          ],
+          'Block-Height': 1234
+        },
+        AoGlobal: {
+          Process: {
+            Id: '1234',
+            Tags: []
+          }
+        }
+      }
+
+      test('if noSave is falsey', async () => {
+        let called = false
+        const evaluate = (await import('./worker.js')).evaluateWith({
+          ...deps,
+          saveEvaluation: () => { called = true }
+        })
+
+        await evaluate(args)
+        assert.ok(called)
+      })
+
+      test('noop if noSave is true', async () => {
+        let called = false
+        const evaluate = (await import('./worker.js')).evaluateWith({
+          ...deps,
+          saveEvaluation: () => { called = true }
+        })
+
+        await evaluate({ ...args, noSave: true })
+        assert.ok(!called)
+      })
+    })
+
     describe('errors', async () => {
       let evaluate
       before(async () => {
         evaluate = (await import('./worker.js')).evaluateWith({
+          saveEvaluation: async (evaluation) => evaluation,
           wasmInstanceCache: new LRUCache({ max: 1 }),
           wasmModuleCache: new LRUCache({ max: 1 }),
           readWasmFile: async () => createReadStream('./test/processes/sad/process.wasm'),
           writeWasmFile: async () => true,
           streamTransactionData: async () => assert.fail('should not call if readWasmFile'),
-          bootstrapWasmInstance: (wasmModule) => AoLoader((info, receiveInstance) =>
-            WebAssembly.instantiate(wasmModule, info).then(receiveInstance)
-          ),
+          bootstrapWasmInstance: (wasmModule, _moduleOptions) => {
+            assert.deepStrictEqual(_moduleOptions, moduleOptions)
+            return AoLoader(
+              (info, receiveInstance) => WebAssembly.instantiate(wasmModule, info).then(receiveInstance),
+              _moduleOptions
+            )
+          },
           logger
         })
       })
@@ -169,8 +265,7 @@ describe('worker', async () => {
       const args = {
         streamId: 'stream-123',
         moduleId: 'module-123',
-        gas: 9_000_000_000_000,
-        memLimit: 9_000_000_000_000,
+        moduleOptions,
         name: 'message 123',
         processId: 'process-123',
         Memory: Buffer.from('Hello', 'utf-8'),

@@ -4,7 +4,7 @@ local ao = {
     _module = "",
     authorities = {},
     _ref = 0,
-    outbox = {Output = {}, Messages = {}, Spawns = {}}
+    outbox = {Output = {}, Messages = {}, Spawns = {}, Assignments = {}}
 }
 
 local function _includes(list)
@@ -65,7 +65,7 @@ function ao.init(env)
         end
     end
 
-    ao.outbox = {Output = {}, Messages = {}, Spawns = {}}
+    ao.outbox = {Output = {}, Messages = {}, Spawns = {}, Assignments = {}}
     ao.env = env
 
 end
@@ -78,7 +78,7 @@ function ao.log(txt)
 end
 
 -- clears outbox
-function ao.clearOutbox() ao.outbox = {Output = {}, Messages = {}, Spawns = {}} end
+function ao.clearOutbox() ao.outbox = {Output = {}, Messages = {}, Spawns = {}, Assignments = {}} end
 
 function ao.send(msg)
     assert(type(msg) == 'table', 'msg should be a table')
@@ -129,10 +129,8 @@ function ao.spawn(module, msg)
     -- inc spawn reference
     ao._ref = ao._ref + 1
 
-    if not msg.Data then data = "NODATA" end
-
     local spawn = {
-        Data = data,
+        Data = msg.Data or "NODATA",
         Anchor = padZero32(ao._ref),
         Tags = {
             {name = "Data-Protocol", value = "ao"},
@@ -170,6 +168,13 @@ function ao.spawn(module, msg)
     return spawn
 end
 
+function ao.assign(assignment)
+    assert(type(assignment) == 'table', 'assignment should be a table')
+    assert(type(assignment.Processes) == 'table', 'Processes should be a table')
+    assert(type(assignment.Message) == "string", "Message should be a string")
+    table.insert(ao.outbox.Assignments, assignment)
+end
+
 function ao.isTrusted(msg)
     if #ao.authorities == 0 then return true end
 
@@ -188,7 +193,8 @@ function ao.result(result)
     return {
         Output = result.Output or ao.outbox.Output,
         Messages = ao.outbox.Messages,
-        Spawns = ao.outbox.Spawns
+        Spawns = ao.outbox.Spawns,
+        Assignments = ao.outbox.Assignments
     }
 end
 

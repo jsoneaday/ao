@@ -12,8 +12,11 @@ import { LRUCache } from 'lru-cache'
 import { Rejected, Resolved, fromPromise, of } from 'hyper-async'
 import AoLoader from '@permaweb/ao-loader'
 
+import { saveEvaluationSchema } from '../dal.js'
 import { createLogger } from '../logger.js'
 import { joinUrl } from '../utils.js'
+import { saveEvaluationWith } from './ao-evaluation.js'
+import { createSqliteClient } from './sqlite.js'
 
 const pipelineP = promisify(pipeline)
 
@@ -61,18 +64,14 @@ function writeWasmFileWith ({ DIR, logger }) {
  * #######################
  */
 
-function streamTransactionDataWith ({ fetch, GATEWAY_URL, logger }) {
+function streamTransactionDataWith ({ fetch, ARWEAVE_URL, logger }) {
   return (id) =>
     of(id)
       .chain(fromPromise((id) =>
-        fetch(joinUrl({ url: GATEWAY_URL, path: `/raw/${id}` }))
+        fetch(joinUrl({ url: ARWEAVE_URL, path: `/raw/${id}` }))
           .then(async (res) => {
             if (res.ok) return res
-            logger(
-              'Error Encountered when fetching raw data for transaction \'%s\' from gateway \'%s\'',
-              id,
-              GATEWAY_URL
-            )
+            logger('Error Encountered when fetching raw data for transaction \'%s\' from gateway \'%s\'', id)
             throw new Error(`${res.status}: ${await res.text()}`)
           })
       ))
@@ -125,27 +124,33 @@ export function evaluateWith ({
   writeWasmFile,
   streamTransactionData,
   bootstrapWasmInstance,
+  saveEvaluation,
   logger
 }) {
-  function maybeCachedModule ({ streamId, moduleId, gas, memLimit, Memory, message, AoGlobal }) {
+  streamTransactionData = fromPromise(streamTransactionData)
+  readWasmFile = fromPromise(readWasmFile)
+  bootstrapWasmInstance = fromPromise(bootstrapWasmInstance)
+  saveEvaluation = fromPromise(saveEvaluationSchema.implement(saveEvaluation))
+
+  function maybeCachedModule ({ streamId, moduleId, moduleOptions, Memory, message, AoGlobal }) {
     return of(moduleId)
       .map((moduleId) => wasmModuleCache.get(moduleId))
       .chain((wasm) => wasm
         ? Resolved(wasm)
-        : Rejected({ streamId, moduleId, gas, memLimit, Memory, message, AoGlobal })
+        : Rejected({ streamId, moduleId, moduleOptions, Memory, message, AoGlobal })
       )
   }
 
-  function maybeStoredBinary ({ streamId, moduleId, gas, memLimit, Memory, message, AoGlobal }) {
+  function maybeStoredBinary ({ streamId, moduleId, moduleOptions, Memory, message, AoGlobal }) {
     logger('Checking for wasm file to load module "%s"...', moduleId)
 
     return of(moduleId)
-      .chain(fromPromise(readWasmFile))
+      .chain(readWasmFile)
       .chain(fromPromise((stream) =>
         WebAssembly.compileStreaming(wasmResponse(Readable.toWeb(stream)))
       ))
       .bimap(
-        () => ({ streamId, moduleId, gas, memLimit, Memory, message, AoGlobal }),
+        () => ({ streamId, moduleId, moduleOptions, Memory, message, AoGlobal }),
         identity
       )
   }
@@ -154,7 +159,7 @@ export function evaluateWith ({
     logger('Loading wasm transaction "%s"...', moduleId)
 
     return of(moduleId)
-      .chain(fromPromise(streamTransactionData))
+      .chain(streamTransactionData)
       .map((res) => res.body.tee())
       /**
        * Simoultaneously cache the binary in a file
@@ -169,15 +174,15 @@ export function evaluateWith ({
       .map(([, res]) => res)
   }
 
-  function loadInstance ({ streamId, moduleId, gas, memLimit, Memory, message, AoGlobal }) {
-    return maybeCachedModule({ streamId, moduleId, gas, memLimit, Memory, message, AoGlobal })
+  function loadInstance ({ streamId, moduleId, moduleOptions, Memory, message, AoGlobal }) {
+    return maybeCachedModule({ streamId, moduleId, moduleOptions, Memory, message, AoGlobal })
       .bichain(
         /**
          * Potentially Compile the Wasm Module, cache it for next time,
          *
          * then create the Wasm instance
          */
-        () => of({ streamId, moduleId, gas, memLimit, Memory, message, AoGlobal })
+        () => of({ streamId, moduleId, moduleOptions, Memory, message, AoGlobal })
           .chain(maybeStoredBinary)
           .bichain(loadTransaction, Resolved)
           /**
@@ -193,7 +198,7 @@ export function evaluateWith ({
          */
         Resolved
       )
-      .chain(fromPromise((wasmModule) => bootstrapWasmInstance(wasmModule, gas, memLimit)))
+      .chain((wasmModule) => bootstrapWasmInstance(wasmModule, moduleOptions))
       /**
        * Cache the wasm module for this particular stream,
        * in memory, for quick retrieval next time
@@ -204,12 +209,12 @@ export function evaluateWith ({
       })
   }
 
-  function maybeCachedInstance ({ streamId, moduleId, gas, memLimit, Memory, message, AoGlobal }) {
+  function maybeCachedInstance ({ streamId, moduleId, moduleOptions, Memory, message, AoGlobal }) {
     return of(streamId)
       .map((streamId) => wasmInstanceCache.get(streamId))
       .chain((wasmInstance) => wasmInstance
         ? Resolved(wasmInstance)
-        : Rejected({ streamId, moduleId, gas, memLimit, Memory, message, AoGlobal })
+        : Rejected({ streamId, moduleId, moduleOptions, Memory, message, AoGlobal })
       )
   }
 
@@ -259,6 +264,7 @@ export function evaluateWith ({
       ),
       Error: pathOr(undefined, ['Error']),
       Messages: pathOr([], ['Messages']),
+      Assignments: pathOr([], ['Assignments']),
       Spawns: pathOr([], ['Spawns']),
       Output: pipe(
         pathOr('', ['Output']),
@@ -294,12 +300,12 @@ export function evaluateWith ({
    *
    * Finally, evaluates the message and returns the result of the evaluation.
    */
-  return ({ streamId, moduleId, gas, memLimit, name, processId, Memory, message, AoGlobal }) =>
+  return ({ streamId, moduleId, moduleOptions, processId, noSave, name, deepHash, cron, ordinate, isAssignment, Memory, message, AoGlobal }) =>
     /**
      * Dynamically load the module, either from cache,
      * or from a file
      */
-    maybeCachedInstance({ streamId, moduleId, gas, memLimit, name, processId, Memory, message, AoGlobal })
+    maybeCachedInstance({ streamId, moduleId, moduleOptions, name, processId, Memory, message, AoGlobal })
       .bichain(loadInstance, Resolved)
       /**
        * Perform the evaluation
@@ -323,12 +329,45 @@ export function evaluateWith ({
             Resolved
           )
           .map(mergeOutput(Memory, name, processId))
+          .chain((output) => {
+            /**
+             * Noop saving the evaluation is noSave flag is set
+             */
+            if (noSave) return Resolved(output)
+
+            return saveEvaluation({
+              deepHash,
+              cron,
+              ordinate,
+              isAssignment,
+              processId,
+              messageId: message.Id,
+              timestamp: message.Timestamp,
+              nonce: message.Nonce,
+              epoch: message.Epoch,
+              blockHeight: message['Block-Height'],
+              evaluatedAt: new Date(),
+              output
+            })
+              .bimap(
+                logger.tap('Failed to save evaluation'),
+                identity
+              )
+              /**
+               * Always ensure this Async resolves
+               */
+              .bichain(Resolved, Resolved)
+              .map(() => output)
+          })
       )
       .toPromise()
 }
 
 if (!process.env.NO_WORKER) {
   const logger = createLogger(`ao-cu:${hostname()}:worker-${workerData.id}`)
+
+  const sqlite = await createSqliteClient({ url: workerData.DB_URL, bootstrap: false })
+
   /**
    * Expose our worker api
    */
@@ -338,12 +377,14 @@ if (!process.env.NO_WORKER) {
       wasmInstanceCache: createWasmInstanceCache({ MAX_SIZE: workerData.WASM_INSTANCE_CACHE_MAX_SIZE }),
       readWasmFile: readWasmFileWith({ DIR: workerData.WASM_BINARY_FILE_DIRECTORY }),
       writeWasmFile: writeWasmFileWith({ DIR: workerData.WASM_BINARY_FILE_DIRECTORY, logger }),
-      streamTransactionData: streamTransactionDataWith({ fetch, GATEWAY_URL: workerData.GATEWAY_URL, logger }),
-      bootstrapWasmInstance: (wasmModule, gasLimit, memoryLimit) => AoLoader(
-        (info, receiveInstance) => WebAssembly.instantiate(wasmModule, info).then(receiveInstance),
-        gasLimit,
-        memoryLimit
-      ),
+      streamTransactionData: streamTransactionDataWith({ fetch, ARWEAVE_URL: workerData.ARWEAVE_URL, logger }),
+      bootstrapWasmInstance: (wasmModule, moduleOptions) => {
+        return AoLoader(
+          (info, receiveInstance) => WebAssembly.instantiate(wasmModule, info).then(receiveInstance),
+          moduleOptions
+        )
+      },
+      saveEvaluation: saveEvaluationWith({ db: sqlite, logger }),
       logger
     })
   })

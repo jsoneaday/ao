@@ -35,8 +35,6 @@ const getCronString = (hoursToAdd = 0, minutesToAdd = 0) => {
   return `${minutes} ${hours} ${dayOfMonth} ${month} *`
 }
 
-
-
 let ct = null
 let isJobRunning = false
 ct = cron.schedule('*/10 * * * * *', async () => {
@@ -83,39 +81,38 @@ const messageQueue = []
 const spawnQueue = []
 
 const processMessageQueue = async () => {
-    if (!isProcessingMessages) {
-        isProcessingMessages = true
-        while (messageQueue.length > 0) {
-            await apis.processMsg({ resultMsg: messageQueue.shift() })
-                .chain((res) => apis.fetchResult({
-                    processId: res.resultMsg.processId,
-                    txId: res.tx.id
-                }))
-                .map(publishResult)
-                .bimap(
-                    e => console.error(e),
-                    r => {console.log(r)}
-                )
-                .toPromise()
-        }
-        isProcessingMessages = false
+  if (!isProcessingMessages) {
+    isProcessingMessages = true
+    while (messageQueue.length > 0) {
+      await apis.processMsg({ resultMsg: messageQueue.shift() })
+        .chain((res) => apis.fetchResult({
+          processId: res.tx.processId,
+          txId: res.tx.id
+        }))
+        .map(publishResult)
+        .bimap(
+          e => console.error(e),
+          r => { console.log(r) }
+        )
+        .toPromise()
     }
+    isProcessingMessages = false
+  }
 }
 
 const processSpawnQueue = async () => {
-  if(!isProcessingSpawns) {
-    isProcessingSpawns = true 
+  if (!isProcessingSpawns) {
+    isProcessingSpawns = true
     while (spawnQueue.length > 0) {
-        await apis.processSpawn({ resultSpawn: spawnQueue.shift() })
-            .bimap(
-                e => console.error(e),
-                r => {console.log(r)}
-            )
-            .toPromise()
+      await apis.processSpawn({ resultSpawn: spawnQueue.shift() })
+        .bimap(
+          e => console.error(e),
+          r => { console.log(r) }
+        )
+        .toPromise()
     }
     isProcessingSpawns = false
   }
-  
 }
 
 PubSub.subscribe('MESSAGE', (_topic, data) => {
@@ -150,9 +147,9 @@ async function getCursor () {
   if (fs.existsSync(cursorFilePath)) {
     return fs.readFileSync(cursorFilePath, 'utf8')
   } else {
-    let latestResults = await fetch(`${config.CU_URL}/results/${processId}?sort=DESC&limit=1&processId=${processId}`)
-    let latestJson = await latestResults.json()
-    if(latestJson?.edges?.length > 0) {
+    const latestResults = await fetch(`${config.CU_URL}/results/${processId}?sort=DESC&limit=1&processId=${processId}`)
+    const latestJson = await latestResults.json()
+    if (latestJson?.edges?.length > 0) {
       return latestJson.edges[0].cursor
     }
     return null

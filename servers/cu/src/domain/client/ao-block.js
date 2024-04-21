@@ -1,37 +1,43 @@
 import { fromPromise, of } from 'hyper-async'
-import { always, applySpec, last, map, path, pathSatisfies, pipe, pluck, prop } from 'ramda'
+import { applySpec, last, map, path, pathSatisfies, pipe, pluck, prop, props } from 'ramda'
 import { z } from 'zod'
 
 import { blockSchema } from '../model.js'
-import { BLOCKS_ASC_IDX } from './pouchdb.js'
-import { joinUrl } from '../utils.js'
+import { BLOCKS_TABLE } from './sqlite.js'
 
 const blockDocSchema = z.object({
-  _id: z.string().min(1),
+  id: blockSchema.shape.height,
   height: blockSchema.shape.height,
-  timestamp: blockSchema.shape.timestamp,
-  type: z.literal('block')
+  timestamp: blockSchema.shape.timestamp
 })
-
-function createBlockId ({ height, timestamp }) {
-  return `block-${height}-${timestamp}`
-}
 
 const toBlock = applySpec({
   height: prop('height'),
   timestamp: prop('timestamp')
 })
 
-export function saveBlocksWith ({ pouchDb }) {
+export function saveBlocksWith ({ db }) {
+  function createQuery (blocks) {
+    return {
+      sql: `
+        INSERT OR IGNORE INTO ${BLOCKS_TABLE}
+        (id, height, timestamp)
+        VALUES
+          ${new Array(blocks.length).fill('(?, ?, ?)').join(',\n')}
+      `,
+      parameters: blocks.map(props(['height', 'height', 'timestamp']))
+    }
+  }
   return (blocks) => {
+    if (!blocks.length) return of().toPromise()
+
     return of(blocks)
       .map(
         map(pipe(
           applySpec({
-            _id: (block) => createBlockId(block),
+            id: prop('height'),
             height: prop('height'),
-            timestamp: prop('timestamp'),
-            type: always('block')
+            timestamp: prop('timestamp')
           }),
           /**
            * Ensure the expected shape before writing to the db
@@ -39,33 +45,30 @@ export function saveBlocksWith ({ pouchDb }) {
           blockDocSchema.parse
         ))
       )
-      .chain(fromPromise(docs => pouchDb.bulkDocs(docs)))
+      .chain(fromPromise(blocks => db.run(createQuery(blocks))))
       .toPromise()
   }
 }
 
-export function findBlocksWith ({ pouchDb }) {
+export function findBlocksWith ({ db }) {
   function createQuery ({ minHeight, maxTimestamp }) {
     return {
-      selector: {
-        height: { $gte: minHeight },
-        timestamp: { $lte: maxTimestamp }
-      },
-      sort: [{ height: 'asc' }],
-      limit: Number.MAX_SAFE_INTEGER,
-      use_index: BLOCKS_ASC_IDX
+      sql: `
+        SELECT height, timestamp
+        FROM ${BLOCKS_TABLE}
+        WHERE
+          height >= ?
+          AND timestamp <= ?
+        ORDER BY height ASC
+      `,
+      parameters: [minHeight, maxTimestamp]
     }
   }
 
   return ({ minHeight, maxTimestamp }) => {
     return of({ minHeight, maxTimestamp })
       .map(createQuery)
-      .chain(fromPromise((query) => {
-        return pouchDb.find(query).then((res) => {
-          if (res.warning) console.warn(res.warning)
-          return res.docs
-        })
-      }))
+      .chain(fromPromise((query) => db.query(query)))
       .map(map(toBlock))
       .toPromise()
   }
@@ -74,7 +77,7 @@ export function findBlocksWith ({ pouchDb }) {
 /**
  * @typedef Env2
  * @property {fetch} fetch
- * @property {string} GATEWAY_URL
+ * @property {string} GRAPHQL_URL
  * @property {number} pageSize
  *
  * @callback LoadBlocksMeta
@@ -84,11 +87,8 @@ export function findBlocksWith ({ pouchDb }) {
  * @param {Env1} env
  * @returns {LoadBlocksMeta}
  */
-export function loadBlocksMetaWith ({ fetch, GATEWAY_URL, pageSize, logger }) {
+export function loadBlocksMetaWith ({ fetch, GRAPHQL_URL, pageSize, logger }) {
   // TODO: create a dataloader and use that to batch load contracts
-
-  const GRAPHQL = joinUrl({ url: GATEWAY_URL, path: '/graphql' })
-
   const GET_BLOCKS_QUERY = `
       query GetBlocks($min: Int!, $limit: Int!) {
         blocks(
@@ -129,7 +129,7 @@ export function loadBlocksMetaWith ({ fetch, GATEWAY_URL, pageSize, logger }) {
           return variables
         })
         .then((variables) =>
-          fetch(GRAPHQL, {
+          fetch(GRAPHQL_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -141,8 +141,7 @@ export function loadBlocksMetaWith ({ fetch, GATEWAY_URL, pageSize, logger }) {
         .then(async (res) => {
           if (res.ok) return res.json()
           logger(
-            'Error Encountered when fetching page of block metadata from gateway \'%s\' with minBlock \'%s\' and maxTimestamp \'%s\'',
-            GATEWAY_URL,
+            'Error Encountered when fetching page of block metadata from gateway with minBlock \'%s\' and maxTimestamp \'%s\'',
             newMin,
             maxTimestamp
           )

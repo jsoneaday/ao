@@ -6,6 +6,13 @@ export const positiveIntSchema = z.preprocess((val) => {
   return typeof val === 'string' ? parseInt(val.replaceAll('_', '')) : -1
 }, z.number().nonnegative())
 
+export const commaDelimitedArraySchema = z.preprocess((val) => {
+  if (Array.isArray(val)) return val
+  // ',' delimited string
+  if (typeof val === 'string') return val.split(',').map((s) => s.trim())
+  return val
+}, z.array(z.string()))
+
 export const domainConfigSchema = z.object({
   /**
    * The maximum Memory-Limit, in bytes, supported for ao processes
@@ -20,27 +27,35 @@ export const domainConfigSchema = z.object({
    */
   PROCESS_WASM_COMPUTE_MAX_LIMIT: positiveIntSchema,
   /**
-   * The gateway for the CU to use fetch block metadata, data on arweave,
-   * and Scheduler-Location data
+   * The url for the graphql server to be used by the CU
+   * to query for metadata from an Arweave Gateway
+   *
+   * ie. https://arweave.net/graphql
    */
-  GATEWAY_URL: z.string().url('GATEWAY_URL must be a a valid URL'),
+  GRAPHQL_URL: z.string().url('GRAPHQL_URL must be a valid URL'),
+  /**
+   * The url for the graphql server to be used by the CU
+   * to query for process Checkpoints.
+   *
+   * ie. https://arweave.net/graphql
+   */
+  CHECKPOINT_GRAPHQL_URL: z.string().url('CHECKPOINT_GRAPHQL_URL must be a valid URL'),
+  /**
+   * The url for the server that hosts the Arweave http API
+   *
+   * ie. https://arweave.net
+   */
+  ARWEAVE_URL: z.string().url('ARWEAVE_URL must be a valid URL'),
   /**
    * The url of the uploader to use to upload Process Checkpoints to Arweave
+   *
+   * ie. https://up.arweave.net
    */
   UPLOADER_URL: z.string().url('UPLOADER_URL must be a a valid URL'),
-  /**
-   * Whether the database being used by the CU is embedded within the CU (ie. PouchDB)
-   * or is on another remote process (ie. CouchDB)
-   */
-  DB_MODE: z.enum(['remote', 'embedded']),
   /**
    * The connection string to the database
    */
   DB_URL: z.string().min(1, 'DB_URL must be set to the database connection string'),
-  /**
-   * The maximum number of event listeners for the database
-   */
-  DB_MAX_LISTENERS: z.number().int('DB_MAX_LISTENERS must be an integer'),
   /**
    * The wallet for the CU
    */
@@ -108,10 +123,27 @@ export const domainConfigSchema = z.object({
    */
   PROCESS_MEMORY_CACHE_TTL: positiveIntSchema,
   /**
+   * The interval at which the CU should Checkpoint all processes stored in it's
+   * cache.
+   *
+   * Set to 0 to disable
+   */
+  PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL: positiveIntSchema,
+  /**
    * The amount of time in milliseconds, the CU should wait for evaluation to complete
    * before responding with a "busy" message to the client
    */
-  BUSY_THRESHOLD: positiveIntSchema
+  BUSY_THRESHOLD: positiveIntSchema,
+  /**
+   * A list of process ids that the CU should restrict
+   * aka. blacklist
+   */
+  RESTRICT_PROCESSES: commaDelimitedArraySchema,
+  /**
+   * A list of process ids that the CU should exclusively allow
+   * aka. whitelist
+   */
+  ALLOW_PROCESSES: commaDelimitedArraySchema
 })
 
 export const streamSchema = z.any().refine(stream => {
@@ -186,6 +218,15 @@ export const messageSchema = z.object({
    * A canonical name that can used for logging purposes
    */
   name: z.string(),
+  /**
+   * Whether the message is a pure assignment of an on-chain message
+   */
+  isAssignment: z.boolean().default(false),
+  /**
+   * For assignments, any exclusions to not be passed to the process,
+   * and potentially not loaded from the gateway or arweave
+   */
+  exclude: z.array(z.string()).nullish(),
   message: z.object({
     /**
      * The tx id of the message ie. the data item id
@@ -295,13 +336,14 @@ export const evaluationSchema = z.object({
     z.date()
   ),
   /**
-   * ao processes return { Memory, Message, Spawns, Output, Error } }
+   * ao processes return { Memory, Message, Assignments, Spawns, Output, Error } }
    *
    * This is the output of process, after the action was applied
    */
   output: z.object({
     Memory: z.any().nullish(),
     Messages: z.array(z.any()).nullish(),
+    Assignments: z.array(z.any()).nullish(),
     Spawns: z.array(z.any()).nullish(),
     Output: z.any().nullish(),
     GasUsed: z.number().nullish(),

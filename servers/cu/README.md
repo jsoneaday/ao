@@ -6,10 +6,9 @@ This is an spec compliant `ao` Compute Unit, implemented using NodeJS
 
 - [Usage](#usage)
 - [Environment Variables](#environment-variables)
-  - [Running With CouchDB](#running-with-couchdb)
 - [Tests](#tests)
 - [Debug Logging](#debug-logging)
-- [Heap Snapshot](#heap-snapshot)
+- [Manually Trigger Checkpointing](#manually-trigger-checkpointing)
 - [Project Structure](#project-structure)
   - [Business Logic](#business-logic)
     - [Driven Adapters](#driven-adapters)
@@ -40,8 +39,14 @@ Either command will start a server listening on `PORT` (`6363` by default).
 There are a few environment variables that you can set. Besides `WALLET`/`WALLET_FILE`, they
 each have a default:
 
-- `GATEWAY_URL`: The Arweave gateway for the CU to use fetch block metadata,
-  data on arweave, and Scheduler-Location data (defaults to `arweave.net`)
+- `GATEWAY_URL`: The url of the Arweave gateway to use. (Defaults to `https://arweave.net`)
+
+> `GATEWAY_URL` is solely used as a fallback for both `ARWEAVE_URL` and `GRAPHQL_URL`, if not provided (see below).
+
+- `ARWEAVE_URL`: The url for the Arweave http API server, to be used by the CU to fetch
+transaction data from Arweave, specifically ao `Modules`, and `Message` `Assignment`s. (Defaults to `GATEWAY_URL`)
+- `GRAPHQL_URL`: The url for the Arweave Gateway GraphQL server to be used by the CU. (Defaults to `${GATEWAY_URL}/graphql`)
+- `CHECKPOINT_GRAPHQL_URL`: The url for the Arweave Gateway GraphQL server to be used by the CU specifically for querying for Checkpoints, if the default gateway fails. (Defaults to `GRAPHQL_URL`)
 - `UPLOADER_URL`: The url of the uploader to use to upload Process `Checkpoints`
   to Arweave. (Defaults to `up.arweave.net`)
 - `WALLET`/`WALLET_FILE`: the JWK Interface stringified JSON that will be used by the CU, or a file to load it from
@@ -49,10 +54,7 @@ each have a default:
 - `DB_MODE`: Whether the database being used by the CU is embedded within the CU
   or is remote to the CU. Can be either `embedded` or `remote` (defaults to
   `embedded`)
-- `DB_URL`: The connection string to the database (when using
-  `DB_MODE=embedded`, defaults to `ao-cache`)
-- `DB_MAX_LISTENERS`: the maximum number of event listeners for DB events.
-  Defaults to `100`
+- `DB_URL`: the name of the embdeeded database (defaults to `ao-cache`)
 - `DUMP_PATH`: the path to send `heap` snapshots to. (See
   [Heap Snapshots](#heap-snapshot))
 - `PROCESS_WASM_MEMORY_MAX_LIMIT`: The maximum `Memory-Limit`, in bytes,
@@ -74,10 +76,11 @@ for quick retrieval later (Defaults to the os temp directory)
 - `PROCESS_MEMORY_CACHE_TTL`: The time-to-live for a cache entry in the process
   latest memory LRU In-Memory cache. An entries age is reset each time it is
   accessed
+- `PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL`: The interval at which the CU should Checkpoint all processes stored in it's cache. Set to `0` to disabled (defaults to `4h`)
 - `PROCESS_CHECKPOINT_CREATION_THROTTLE`: The amount of time, in milliseconds,
-  that the CU should wait before creating a process `Checkpoint` IF it has
-  already created a Checkpoint for that process. This is effectively a throttle
-  on `Checkpoint` creation, for a given process
+  that the CU should wait before creating a process `Checkpoint` IFF it has
+  already created a Checkpoint for that process, since it last started. This is effectively a throttle
+  on `Checkpoint` creation, for a given process (defaults to `30 minutes`)
 - `DISABLE_PROCESS_CHECKPOINT_CREATION`: Whether to disable process `Checkpoint`
   creation uploads to Arweave. Set to any value to disable `Checkpoint`
   creation. (You must explicitly enable `Checkpoint` creation by setting -
@@ -86,36 +89,9 @@ for quick retrieval later (Defaults to the os temp directory)
 - `MEM_MONITOR_INTERVAL`: The interval, in milliseconds, at which to log memory
   usage on this CU.
 - `BUSY_THRESHOLD`: The amount of time, in milliseconds, the CU should wait for a process evaluation stream to complete before sending a "busy" respond to the client (defaults to `0s` ie. disabled). If disabled, this could cause the CU to maintain long-open connections with clients until it completes long process evaluation streams.
-
-### Running With CouchDB
-
-This Compute Unit can be ran using a CouchDB as it's persistence layer. Simply
-set set `DB_MODE=remote` and `DB_URL` to the CouchDB connection string.
-
-Of course, you will need a CouchDB database running. For development
-convenience, a CouchDB `Dockerfile` and configuration is included in the
-`.couchdb` directory that you can use to spin up a CouchDB instance.
-
-First, build the image by running this at the root of the `mu` module:
-
-```sh
-docker build -t cu-couchdb .couchdb
-```
-
-Then start up a container using that image. You can optionally mount a local
-directory for CouchDB to store persistent data ie. `/workspace/cu-data`
-
-```sh
-mkdir -p /workspace/cu-data
-docker run -it \
-  -p 5984:5984 \
-  -v /workspace/cu-data:/opt/couchdb/data \
-  --env-file servers/cu/.couchdb/couchdb.conf \
-  cu-couch
-```
-
-This will start a CouchDB database listening on port `5984` with credentials in
-the `./couchdb/couchdb.conf` file
+- `RESTRICT_PROCESSES`: A list of process ids that the CU should restrict aka. a `blacklist`
+- `ALLOW_PROCESSES`: The counterpart to RESTRICT_PROCESSES. When configured the CU will 
+   only execute these processes (`whitelist`)
 
 ## Tests
 
@@ -129,29 +105,10 @@ environment variable to the scope of logs you're interested in
 All logging is scoped under the name `ao-cu*`. You can use wildcards to enable a
 subset of logs ie. `ao-cu:readState*`
 
-## Heap Snapshot
+## Manually Trigger Checkpointing
 
-The `ao` Compute Unit is a Compute and Memory Intensive application. It must
-continuously:
-
-- Load Web Assembly Modules, alloating spaces for the compiled binaries, as well
-  as Web Assembly Instance Heaps.
-- Cache `ao` Process memory
-- Load arbitrary amounts of Scheduled Messages from `ao` Scheduler Units
-- Generate arbitrary amounts of Cron Messages
-- Evaluate arbitrary length streams of messages flowing into an `ao` Process.
-
-Each of these tasks have a non-trivial memory and compute footprint, and the
-implementation tries its best to predictably utilize resources.
-
-This implementation heavily utilizes `streams` which have a more predictable
-memory footprint, can properly handle backpressure to prevent any one evaluation
-stream from hogging all of the resources (aka noisy neighbor), and handling
-evaluation streams of arbitrary length, without having to load all of the
-messages into memory, at once.
-
-Regardless, you sometimes may need to peer into the memory usage of the Server.
-This Compute Unit supports exporting a snapshot of it's current heap.
+If you'd like to manually trigger the CU to Checkpoint all Processes it has in it's in-memory cache,
+you can do so by sending the node process a `SIGUSR2` signal.
 
 First, obtain the process id for the CU:
 
@@ -161,9 +118,7 @@ pgrep node
 lsof -i $PORT
 ```
 
-Once you have the process id, you can initiate a heap dump using
-`npm run heapdump -- <pid>`. This will synchronously place a heap snapshot in
-the `DUMP_PATH` and print the name of the snapshot to the console.
+Then send a `SIGUSR2` signal to that process: `kill -USR2 <process>`
 
 ## Project Structure
 
@@ -239,7 +194,6 @@ Architecture.
 
 The `ao` Compute Unit Server is a stateless application, and can be deployed to
 any containerized environment using its `Dockerfile` or using `node` directly.
-If running with CouchDB, it will also need a CouchDB database.
 
 > Make sure you set the `WALLET` environment variable so that is available to
 > the CU runtime.
@@ -253,7 +207,6 @@ or ephemeral.
 So in summary, this `ao` Compute Unit system requirments are:
 
 - a Containerization Environment or `node` to run the application
-- a CouchDB Database
-- a Filesystem
+- a Filesystem to store files and an embedded database
 - an ability to accept Ingress from the Internet
 - an ability to Egress to other `ao` Units and to the Internet

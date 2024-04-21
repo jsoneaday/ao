@@ -1,35 +1,47 @@
 import { fromPromise, of, Rejected, Resolved } from 'hyper-async'
-import { always, applySpec, isEmpty, isNotNil, converge, mergeAll, map, unapply, prop, head } from 'ramda'
+import { always, applySpec, isEmpty, isNotNil, converge, mergeAll, map, unapply, prop, head, defaultTo, evolve, pipe } from 'ramda'
 import { z } from 'zod'
 
 import { evaluationSchema } from '../model.js'
-import { COLLATION_SEQUENCE_MAX_CHAR, CRON_EVALS_ASC_IDX, EVALS_ASC_IDX, EVALS_DEEPHASH_ASCENDING } from './pouchdb.js'
-import { createProcessId } from './ao-process.js'
+import { EVALUATIONS_TABLE, MESSAGES_TABLE, COLLATION_SEQUENCE_MAX_CHAR } from './sqlite.js'
 
 const evaluationDocSchema = z.object({
-  _id: z.string().min(1),
+  id: z.string().min(1),
   processId: evaluationSchema.shape.processId,
   messageId: evaluationSchema.shape.messageId,
   deepHash: evaluationSchema.shape.deepHash,
-  timestamp: evaluationSchema.shape.timestamp,
   nonce: evaluationSchema.shape.nonce,
   epoch: evaluationSchema.shape.epoch,
+  timestamp: evaluationSchema.shape.timestamp,
   ordinate: evaluationSchema.shape.ordinate,
   blockHeight: evaluationSchema.shape.blockHeight,
   cron: evaluationSchema.shape.cron,
-  parent: z.string().min(1),
   evaluatedAt: evaluationSchema.shape.evaluatedAt,
-  output: evaluationSchema.shape.output.omit({ Memory: true }),
-  type: z.literal('evaluation')
+  output: evaluationSchema.shape.output.omit({ Memory: true })
 })
 
 function createEvaluationId ({ processId, timestamp, ordinate, cron }) {
-  /**
-   * transactions can sometimes start with an underscore,
-   * which is not allowed in PouchDB, so prepend to create
-   * an _id
-   */
-  return `eval-${[processId, timestamp, ordinate, cron].filter(isNotNil).join(',')}`
+  return `${[processId, timestamp, ordinate, cron].filter(isNotNil).join(',')}`
+}
+
+/**
+ * Each message evaluated by the CU must have a unique idenfier. Messages can be:
+ * - an "end-user" message (signed by a "end-user" wallet)
+ * - an assignment (either signed by an "end-user" wallet or pushed from a MU)
+ * - a pushed message (from a MU)
+ *
+ * If the message is an assignment, then we know that its unique identifier
+ * is always the messageId.
+ *
+ * Otherwise, we must check if a deepHash was calculated by the CU (ie. for a pushed message)
+ * and use that as the unique identifier
+ *
+ * Finally, if it is not an assignment and also not pushed from a MU, then it MUST
+ * be a "end-user" message, and therefore its unique identifier is, once again, the messageId
+ */
+function createMessageId ({ messageId, deepHash, isAssignment }) {
+  if (isAssignment) return messageId
+  return deepHash || messageId
 }
 
 const toEvaluation = applySpec({
@@ -46,223 +58,218 @@ const toEvaluation = applySpec({
   output: prop('output')
 })
 
-export function findEvaluationWith ({ pouchDb }) {
+const fromEvaluationDoc = pipe(
+  evolve({
+    output: JSON.parse,
+    evaluatedAt: (timestamp) => new Date(timestamp)
+  }),
+  /**
+   * Ensure the input matches the expected
+   * shape
+   */
+  evaluationDocSchema.parse,
+  toEvaluation
+)
+
+export function findEvaluationWith ({ db }) {
+  function createQuery ({ processId, timestamp, ordinate, cron }) {
+    return {
+      sql: `
+        SELECT
+          id, processId, messageId, deepHash, nonce, epoch, timestamp,
+          ordinate, blockHeight, cron, evaluatedAt, output
+        FROM ${EVALUATIONS_TABLE}
+        WHERE
+          id = ?;
+      `,
+      parameters: [createEvaluationId({ processId, timestamp, ordinate, cron })]
+    }
+  }
+
   return ({ processId, to, ordinate, cron }) => {
-    return of({ processId, to, ordinate, cron })
-      .chain(fromPromise(() => pouchDb.get(createEvaluationId({ processId, timestamp: to, ordinate, cron }))))
-      .bichain(
-        (err) => {
-          if (err.status === 404) return Rejected({ status: 404, message: 'Evaluation result not found' })
-          return Rejected(err)
-        },
-        (found) => of(found)
-          /**
-           * Ensure the input matches the expected
-           * shape
-           */
-          .map(evaluationDocSchema.parse)
-          .map(toEvaluation)
-      )
+    return of({ processId, timestamp: to, ordinate, cron })
+      .chain(fromPromise((params) => db.query(createQuery(params))))
+      .map(defaultTo([]))
+      .map(head)
+      .chain((row) => row ? Resolved(row) : Rejected({ status: 404, message: 'Evaluation result not found' }))
+      .map(fromEvaluationDoc)
       .toPromise()
   }
 }
 
-export function findLatestEvaluationsWith ({ pouchDb }) {
-  function createQuery ({ processId, to, ordinate, cron, limit }) {
-    const query = {
-      selector: {
-        _id: {
+export function saveEvaluationWith ({ db, logger: _logger }) {
+  const toEvaluationDoc = pipe(
+    converge(
+      unapply(mergeAll),
+      [
+        toEvaluation,
+        (evaluation) => ({
           /**
-           * find any evaluations for the process
-           */
-          $gte: createEvaluationId({ processId, timestamp: '' }),
-          /**
-           * up to the latest evaluation.
+           * The processId concatenated with the timestamp, ordinate (aka most recent nonce)
+           * and the cron (if defined)
+           * is used as the id for an evaluation record.
            *
-           * By using the max collation sequence char, this will give us all evaluations
-           * for the process, all the way up to the latest
+           * This makes it easier to query using a range query against the
+           * primary key
            */
-          $lte: createEvaluationId({ processId, timestamp: COLLATION_SEQUENCE_MAX_CHAR })
-        }
-      },
-      /**
-       * _ids for sequential evals are monotonically increasing
-       * and lexicographically sortable
-       *
-       * so by sorting descending, the first document will also be the latest
-       * in the evaluation stream
-       */
-      sort: [{ _id: 'desc' }],
-      /**
-       * Only get the latest document within the range,
-       * aka the latest evaluation
-       */
-      limit,
-      use_index: EVALS_ASC_IDX
-    }
+          id: createEvaluationId({
+            processId: evaluation.processId,
+            timestamp: evaluation.timestamp,
+            ordinate: evaluation.ordinate,
+            /**
+             * By appending the cron identifier to the evaluation doc id,
+             * this guarantees the document will have a unique, but sortable, id
+             */
+            cron: evaluation.cron
+          })
+        })
+      ]
+    ),
+    /**
+     * Ensure the expected shape before writing to the db
+     */
+    evaluationDocSchema.parse
+  )
+
+  const messageDocParamsSchema = z.tuple([
+    z.string().min(1),
+    z.string().min(1),
+    z.string().min(1)
+  ])
+
+  function createQuery (evaluation) {
+    const evalDoc = toEvaluationDoc(evaluation)
+    const statements = [
+      {
+        sql: `
+          INSERT OR IGNORE INTO ${EVALUATIONS_TABLE}
+            (id, processId, messageId, deepHash, nonce, epoch, timestamp, ordinate, blockHeight, cron, evaluatedAt, output)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        `,
+        parameters: [
+          // evaluations insert
+          evalDoc.id,
+          evalDoc.processId,
+          evalDoc.messageId,
+          evalDoc.deepHash,
+          evalDoc.nonce,
+          evalDoc.epoch,
+          evalDoc.timestamp,
+          evalDoc.ordinate,
+          evalDoc.blockHeight,
+          evalDoc.cron,
+          evalDoc.evaluatedAt.getTime(),
+          JSON.stringify(evalDoc.output)
+        ]
+      }
+    ]
 
     /**
-     * Criteria was provided, so overwrite upper range with actual upper range
-     */
-    if (to || ordinate || cron) {
-      query.selector._id.$lte =
-        `${createEvaluationId({ processId, timestamp: to, ordinate, cron })}${COLLATION_SEQUENCE_MAX_CHAR}`
+      * Cron messages are not needed to be saved in the messages table
+      */
+    if (!evaluation.cron) {
+      statements.push({
+        sql: `
+          INSERT OR IGNORE INTO ${MESSAGES_TABLE} (id, processId, seq) VALUES (?, ?, ?);
+         `,
+        parameters: messageDocParamsSchema.parse([
+          createMessageId({
+            messageId: evaluation.messageId,
+            deepHash: evaluation.deepHash,
+            isAssignment: evaluation.isAssignment
+          }),
+          evaluation.processId,
+          `${evaluation.epoch}:${evaluation.nonce}`
+        ])
+      })
     }
 
-    return query
+    return statements
   }
 
-  return ({ processId, to, ordinate, cron }) => {
-    return of({ processId, to, ordinate, cron })
-      .map(createQuery)
-      .chain(fromPromise((query) => {
-        return pouchDb.find(query)
-          .then((res) => {
-            if (res.warning) console.warn(res.warning)
-            return res.docs
-          })
-      }))
-      .map(map(toEvaluation))
-      .toPromise()
-  }
-}
-
-export function saveEvaluationWith ({ pouchDb, logger: _logger }) {
   return (evaluation) => {
     return of(evaluation)
-      .map(
-        converge(
-          unapply(mergeAll),
-          [
-            toEvaluation,
-            applySpec({
-              /**
-               * The processId concatenated with the timestamp, and possible the cron (if defined)
-               * is used as the _id for an evaluation
-               *
-               * This makes it easier to query using a range query against the
-               * primary index
-               */
-              _id: (evaluation) =>
-                createEvaluationId({
-                  processId: evaluation.processId,
-                  timestamp: evaluation.timestamp,
-                  ordinate: evaluation.ordinate,
-                  /**
-                   * By appending the cron identifier to the evaluation doc _id,
-                   *
-                   * this guarantees the document will have a unique, but sortable, _id
-                   */
-                  cron: evaluation.cron
-                }),
-              parent: (evaluation) => createProcessId({ processId: evaluation.processId }),
-              type: always('evaluation')
-            })
-          ]
-        )
-      )
-      /**
-       * Ensure the expected shape before writing to the db
-       */
-      .map(evaluationDocSchema.parse)
-      .chain((doc) =>
-        of(doc)
-          .chain(fromPromise((doc) => pouchDb.put(doc)))
-          .bichain(
-            (err) => {
-              /**
-               * Already exists, so just return the doc
-               */
-              if (err.status === 409) return Resolved(doc)
-              return Rejected(err)
-            },
-            Resolved
-          )
-          .map(always(doc._id))
+      .chain((data) =>
+        of(data)
+          .map((data) => createQuery(data))
+          .chain(fromPromise((statements) => db.transaction(statements)))
+          .map(always(data.id))
       )
       .toPromise()
   }
 }
 
-export function findEvaluationsWith ({ pouchDb }) {
+export function findEvaluationsWith ({ db }) {
   function createQuery ({ processId, from, to, onlyCron, sort, limit }) {
-    const query = {
-      selector: {
-        _id: {
-          $gt: createEvaluationId({ processId, timestamp: '' }),
-          $lte: createEvaluationId({ processId, timestamp: COLLATION_SEQUENCE_MAX_CHAR })
-        },
-        ...(onlyCron ? { cron: { $exists: true } } : {})
-      },
-      limit,
-      sort: [{ _id: sort }],
-      use_index: onlyCron ? CRON_EVALS_ASC_IDX : EVALS_ASC_IDX
+    return {
+      sql: `
+        SELECT
+          id, processId, messageId, deepHash, nonce, epoch, timestamp,
+          ordinate, blockHeight, cron, evaluatedAt, output
+        FROM ${EVALUATIONS_TABLE}
+        WHERE
+          id > ? AND id <= ?
+          ${onlyCron ? 'AND cron IS NOT NULL' : ''}
+        ORDER BY
+          timestamp ${sort},
+          ordinate ${sort},
+          cron ${sort}
+        LIMIT ?;
+      `,
+      parameters: [
+        /**
+         * trim range using criteria, if provided.
+         *
+         * from is exclusive, while to is inclusive
+         */
+        isEmpty(from)
+          ? createEvaluationId({ processId, timestamp: '' })
+          : createEvaluationId({ processId, timestamp: from.timestamp, ordinate: from.ordinate, cron: from.cron }),
+        isEmpty(to)
+          ? createEvaluationId({ processId, timestamp: COLLATION_SEQUENCE_MAX_CHAR })
+          : createEvaluationId({ processId, timestamp: to.timestamp, ordinate: to.ordinate || COLLATION_SEQUENCE_MAX_CHAR, cron: to.cron }),
+        limit
+      ]
     }
-
-    /**
-     * trim range using criteria, if provided.
-     *
-     * from is exclusive, while to is inclusive
-     */
-    if (!isEmpty(from)) query.selector._id.$gt = `${createEvaluationId({ processId, timestamp: from.timestamp, ordinate: from.ordinate, cron: from.cron })}`
-    if (!isEmpty(to)) query.selector._id.$lte = `${createEvaluationId({ processId, timestamp: to.timestamp, ordinate: to.ordinate, cron: to.cron })}`
-
-    return query
   }
 
   return ({ processId, from, to, onlyCron, sort, limit }) => {
-    return of({ processId, from, to, onlyCron, sort: sort.toLowerCase(), limit })
+    return of({ processId, from, to, onlyCron, sort: sort.toUpperCase(), limit })
       .map(createQuery)
-      .chain(fromPromise((query) => {
-        return pouchDb.find(query).then((res) => {
-          if (res.warning) console.warn(res.warning)
-          return res.docs
-        })
-      }))
-      .map(map(toEvaluation))
+      .chain(fromPromise((query) => db.query(query)))
+      .map(map(fromEvaluationDoc))
       .toPromise()
   }
 }
 
-export function findMessageHashBeforeWith ({ pouchDb }) {
-  function createQuery ({ deepHash, processId, timestamp, ordinate }) {
-    const query = {
-      selector: {
-        /**
-         * Since eval doc _id are each lexicographically sortable, we can find an
-         * prior evaluation, with matching deepHash, by comparing the _ids
-         */
-        _id: {
-          $gt: createEvaluationId({ processId, timestamp: '' }),
-          /**
-           * $lt because we are looking for any evaluation on this process,
-           * PRIOR to this one with a matching deepHash
-           */
-          $lt: createEvaluationId({ processId, timestamp, ordinate })
-        },
-        deepHash
-      },
-      limit: 1,
-      use_index: EVALS_DEEPHASH_ASCENDING
+export function findMessageBeforeWith ({ db }) {
+  function createQuery ({ messageId, deepHash, isAssignment, processId, nonce, epoch }) {
+    return {
+      sql: `
+        SELECT
+          id, seq
+        FROM ${MESSAGES_TABLE}
+        WHERE
+          id = ?
+          AND processId = ?
+          AND seq < ?
+        LIMIT 1;
+      `,
+      parameters: [
+        createMessageId({ messageId, deepHash, isAssignment }),
+        processId,
+        `${epoch}:${nonce}` // 0:13
+      ]
     }
-
-    return query
   }
 
-  return ({ messageHash, processId, timestamp, ordinate }) =>
-    of({ deepHash: messageHash, processId, timestamp, ordinate })
+  return (args) =>
+    of(args)
       .map(createQuery)
-      .chain(fromPromise((query) => {
-        return pouchDb.find(query).then((res) => {
-          if (res.warning) console.warn(res.warning)
-          return res.docs
-        })
-      }))
-      .map(map(toEvaluation))
+      .chain(fromPromise((query) => db.query(query)))
+      .map(defaultTo([]))
       .map(head)
-      .chain((evaluation) => evaluation
-        ? Resolved(evaluation)
-        : Rejected({ status: 404, message: 'Evaluation result not found' })
-      )
+      .chain((row) => row ? Resolved(row) : Rejected({ status: 404, message: 'Message Not Found' }))
+      .map((row) => ({ id: row.id }))
       .toPromise()
 }

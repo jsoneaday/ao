@@ -9,7 +9,14 @@ import uploaderClient from './clients/uploader.js'
 import osClient from './clients/os.js'
 import * as InMemoryClient from './clients/in-memory.js'
 
-import { processMsgWith, crankMsgsWith, processSpawnWith, monitorProcessWith, stopMonitorProcessWith, sendDataItemWith, traceMsgsWith } from './lib/main.js'
+import { processMsgWith } from './api/processMsg.js'
+import { crankMsgsWith } from './api/crankMsgs.js'
+import { processSpawnWith } from './api/processSpawn.js'
+import { monitorProcessWith } from './api/monitorProcess.js'
+import { stopMonitorProcessWith } from './api/stopMonitorProcess.js'
+import { sendDataItemWith } from './api/sendDataItem.js'
+import { sendAssignWith } from './api/sendAssign.js'
+import { processAssignWith } from './api/processAssign.js'
 
 import { createLogger } from './logger.js'
 
@@ -25,7 +32,7 @@ export const domainConfigSchema = z.object({
   MU_WALLET: z.record(z.any()),
   SCHEDULED_INTERVAL: z.number(),
   DUMP_PATH: z.string(),
-  GATEWAY_URL: z.string(),
+  GRAPHQL_URL: z.string(),
   UPLOADER_URL: z.string()
 })
 
@@ -37,7 +44,8 @@ export const createApis = (ctx) => {
   const logger = ctx.logger
   const fetch = ctx.fetch
 
-  const { locate, raw } = schedulerUtilsConnect({ cacheSize: 500, GATEWAY_URL: ctx.GATEWAY_URL, followRedirects: true })
+  const { locate, raw } = schedulerUtilsConnect({ cacheSize: 500, GRAPHQL_URL: ctx.GRAPHQL_URL, followRedirects: true })
+  const { locate: locateNoRedirect } = schedulerUtilsConnect({ cacheSize: 500, GRAPHQL_URL: ctx.GRAPHQL_URL, followRedirects: false })
 
   const cache = InMemoryClient.createLruCache({ size: 500 })
   const getByProcess = InMemoryClient.getByProcessWith({ cache })
@@ -62,15 +70,24 @@ export const createApis = (ctx) => {
     logger: processSpawnLogger,
     locateScheduler: raw,
     locateProcess: locate,
+    locateNoRedirect,
     buildAndSign: signerClient.buildAndSignWith({ MU_WALLET, logger: processMsgLogger }),
     writeDataItem: schedulerClient.writeDataItemWith({ fetch, logger: processSpawnLogger })
+  })
+
+  const processAssignLogger = logger.child('processAssign')
+  const processAssign = processAssignWith({
+    logger: processSpawnLogger,
+    locateProcess: locate,
+    fetchResult: cuClient.resultWith({ fetch, CU_URL, logger: processAssignLogger }),
+    writeAssignment: schedulerClient.writeAssignmentWith({ fetch, logger: processAssignLogger })
   })
 
   const crankMsgsLogger = logger.child('crankMsgs')
   const crankMsgs = crankMsgsWith({
     processMsg,
     processSpawn,
-    saveMessageTrace: async () => {},
+    processAssign,
     logger: crankMsgsLogger
   })
 
@@ -84,8 +101,17 @@ export const createApis = (ctx) => {
     fetchResult: cuClient.resultWith({ fetch, CU_URL, logger: sendDataItemLogger }),
     fetchSchedulerProcess: schedulerClient.fetchSchedulerProcessWith({ getByProcess, setByProcess, fetch, logger: sendDataItemLogger }),
     crank: crankMsgs,
-    logger: sendDataItemLogger,
-    saveMessageTrace: async () => {}
+    logger: sendDataItemLogger
+  })
+
+  const sendAssignLogger = logger.child('sendAssign')
+  const sendAssign = sendAssignWith({
+    selectNode: cuClient.selectNodeWith({ CU_URL, logger: sendDataItemLogger }),
+    locateProcess: locate,
+    writeAssignment: schedulerClient.writeAssignmentWith({ fetch, logger: processAssignLogger }),
+    fetchResult: cuClient.resultWith({ fetch, CU_URL, logger: sendDataItemLogger }),
+    crank: crankMsgs,
+    logger: sendAssignLogger
   })
 
   const monitorProcessLogger = logger.child('monitorProcess')
@@ -102,10 +128,5 @@ export const createApis = (ctx) => {
     logger: monitorProcessLogger
   })
 
-  const traceMsgs = traceMsgsWith({
-    logger,
-    findMessageTraces: async () => { return [] }
-  })
-
-  return { sendDataItem, crankMsgs, monitorProcess, stopMonitorProcess, traceMsgs }
+  return { sendDataItem, crankMsgs, monitorProcess, stopMonitorProcess, sendAssign }
 }

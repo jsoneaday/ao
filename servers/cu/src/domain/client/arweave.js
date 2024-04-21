@@ -41,7 +41,7 @@ export function buildAndSignDataItemWith ({ WALLET, createDataItem = createData 
 /**
  * @typedef Env1
  * @property {fetch} fetch
- * @property {string} GATEWAY_URL
+ * @property {string} GRAPHQL_URL
  *
  * @callback LoadTransactionMeta
  * @param {string} id - the id of the process whose src is being loaded
@@ -50,21 +50,26 @@ export function buildAndSignDataItemWith ({ WALLET, createDataItem = createData 
  * @param {Env1} env
  * @returns {LoadTransactionMeta}
  */
-export function loadTransactionMetaWith ({ fetch, GATEWAY_URL, logger }) {
+export function loadTransactionMetaWith ({ fetch, GRAPHQL_URL, logger }) {
   // TODO: create a dataloader and use that to batch load contracts
 
   const GET_PROCESSES_QUERY = `
-    query GetProcesses ($processIds: [ID!]!) {
+    query GetProcesses (
+      $processIds: [ID!]!
+      $skipTags: Boolean!
+      $skipSignature: Boolean!
+      $skipAnchor: Boolean!
+    ) {
       transactions(ids: $processIds) {
         edges {
           node {
             id
-            signature
-            anchor
+            signature @skip (if: $skipSignature)
+            anchor @skip (if: $skipAnchor)
             owner {
               address
             }
-            tags {
+            tags @skip (if: $skipTags) {
               name
               value
             }
@@ -83,26 +88,35 @@ export function loadTransactionMetaWith ({ fetch, GATEWAY_URL, logger }) {
     })
   })
 
-  const GRAPHQL = joinUrl({ url: GATEWAY_URL, path: '/graphql' })
+  /**
+   * Ideally, this would be in the function schema,
+   * but there is a bug with zod and optional function\
+   * args https://github.com/colinhacks/zod/issues/2990
+   *
+   * So we manually run it
+   */
+  const optionsSchema = z.object({
+    skipTags: z.boolean().default(false),
+    skipSignature: z.boolean().default(false),
+    skipAnchor: z.boolean().default(false)
+  }).default({})
 
-  return (id) =>
+  return (id, options) =>
     of(id)
-      .chain(fromPromise((id) =>
-        fetch(GRAPHQL, {
+      .map((id) => {
+        const variables = optionsSchema.parse(options)
+        variables.processIds = [id]
+        return variables
+      })
+      .chain(fromPromise((variables) =>
+        fetch(GRAPHQL_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            query: GET_PROCESSES_QUERY,
-            variables: { processIds: [id] }
-          })
+          body: JSON.stringify({ query: GET_PROCESSES_QUERY, variables })
         })
           .then(async (res) => {
             if (res.ok) return res.json()
-            logger(
-              'Error Encountered when fetching transaction \'%s\' from gateway \'%s\'',
-              id,
-              GATEWAY_URL
-            )
+            logger('Error Encountered when fetching transaction \'%s\' from gateway', id)
             throw new Error(`${res.status}: ${await res.text()}`)
           })
           .then(transactionConnectionSchema.parse)
@@ -114,7 +128,7 @@ export function loadTransactionMetaWith ({ fetch, GATEWAY_URL, logger }) {
 /**
    * @typedef Env2
    * @property {fetch} fetch
-   * @property {string} GATEWAY_URL
+   * @property {string} ARWEAVE_URL
    *
    * @callback LoadTransactionData
    * @param {string} id - the id of the process whose src is being loaded
@@ -123,30 +137,24 @@ export function loadTransactionMetaWith ({ fetch, GATEWAY_URL, logger }) {
    * @param {Env2} env
    * @returns {LoadTransactionData}
    */
-export function loadTransactionDataWith ({ fetch, GATEWAY_URL, logger }) {
+export function loadTransactionDataWith ({ fetch, ARWEAVE_URL, logger }) {
   // TODO: create a dataloader and use that to batch load processes
   return (id) =>
     of(id)
       .chain(fromPromise((id) =>
-        fetch(joinUrl({ url: GATEWAY_URL, path: `/raw/${id}` }))
+        fetch(joinUrl({ url: ARWEAVE_URL, path: `/raw/${id}` }))
           .then(async (res) => {
             if (res.ok) return res
-            logger(
-              'Error Encountered when fetching raw data for transaction \'%s\' from gateway \'%s\'',
-              id,
-              GATEWAY_URL
-            )
+            logger('Error Encountered when fetching raw data for transaction \'%s\'', id)
             throw new Error(`${res.status}: ${await res.text()}`)
           })
       ))
       .toPromise()
 }
 
-export function queryGatewayWith ({ fetch, GATEWAY_URL, logger }) {
-  const GRAPHQL = joinUrl({ url: GATEWAY_URL, path: '/graphql' })
-
+export function queryGatewayWith ({ fetch, GRAPHQL_URL, logger }) {
   return async ({ query, variables }) => {
-    return fetch(GRAPHQL, {
+    return fetch(GRAPHQL_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query, variables })

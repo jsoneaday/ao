@@ -5,7 +5,8 @@ import { T, always, ascend, cond, equals, identity, ifElse, last, length, mergeR
 import { z } from 'zod'
 import ms from 'ms'
 
-import { messageSchema, streamSchema } from '../model.js'
+import { streamSchema } from '../model.js'
+import { mapFrom } from '../utils.js'
 import { findBlocksSchema, loadBlocksMetaSchema, loadMessagesSchema, loadTimestampSchema, saveBlocksSchema } from '../dal.js'
 
 export const toSeconds = (millis) => Math.floor(millis / 1000)
@@ -618,7 +619,8 @@ function loadCronMessagesWith ({ loadTimestamp, findBlocks, loadBlocksMeta, save
            * It will be the first message evaluated by the module
            */
           if (isColdStart) {
-            const processMessage = messageSchema.parse({
+            logger('Emitting process message at beginning of evaluation stream for process %s cold start: %o', ctx.id)
+            yield {
               /**
                * Ensure the noSave flag is set, so evaluation does not persist
                * this process message
@@ -637,9 +639,17 @@ function loadCronMessagesWith ({ loadTimestamp, findBlocks, loadBlocksMeta, save
                 Target: ctx.id,
                 Anchor: ctx.anchor,
                 /**
-                 * the process message is from the owner of the process
+                 * Since a process may be spawned from another process,
+                 * the owner may not always be an "end user" wallet,
+                 * but the MU wallet that signed and pushed the spawn.
+                 *
+                 * The MU sets From-Process on any data item it pushes
+                 * on behalf of a process, including spawns.
+                 *
+                 * So we can set From here using the Process tags
+                 * and owner, just like we do for any other message
                  */
-                From: ctx.owner,
+                From: mapFrom({ tags: ctx.tags, owner: ctx.owner }),
                 Tags: ctx.tags,
                 Epoch: undefined,
                 Nonce: undefined,
@@ -651,15 +661,13 @@ function loadCronMessagesWith ({ loadTimestamp, findBlocks, loadBlocksMeta, save
                 Process: { Id: ctx.id, Owner: ctx.owner, Tags: ctx.tags },
                 Module: { Id: ctx.moduleId, Owner: ctx.moduleOwner, Tags: ctx.moduleTags }
               }
-            })
-            logger('Emitting process message at beginning of evaluation stream for process %s cold start: %o', ctx.id, processMessage)
-            yield processMessage
+            }
           }
 
           /**
            * Emit the merged stream of Cron and Scheduled Messages
            */
-          for await (const message of $messages) yield messageSchema.parse(message)
+          for await (const message of $messages) yield message
         })
       )
     })

@@ -1,42 +1,38 @@
 import { randomBytes } from 'node:crypto'
 
 import { fromPromise, of, Rejected, Resolved } from 'hyper-async'
-import { always, applySpec, prop } from 'ramda'
+import { always, applySpec, defaultTo, evolve, head, prop } from 'ramda'
 import { z } from 'zod'
 
 import { moduleSchema } from '../model.js'
+import { MODULES_TABLE } from './sqlite.js'
 
 const moduleDocSchema = z.object({
-  _id: z.string().min(1),
-  moduleId: moduleSchema.shape.id,
+  id: z.string().min(1),
   tags: moduleSchema.shape.tags,
-  owner: moduleSchema.shape.owner,
-  type: z.literal('module')
+  owner: moduleSchema.shape.owner
 })
 
-function createModuleId ({ moduleId }) {
-  /**
-   * transactions can sometimes start with an underscore,
-   * which is not allowed in PouchDB, so prepend to create
-   * an _id
-   */
-  return `module-${moduleId}`
-}
-
-export function saveModuleWith ({ pouchDb, logger: _logger }) {
+export function saveModuleWith ({ db, logger: _logger }) {
   const logger = _logger.child('ao-module:saveModule')
+
+  function createQuery (module) {
+    return {
+      sql: `
+        INSERT OR IGNORE INTO ${MODULES_TABLE}
+        (id, tags, owner)
+        VALUES (?, ?, ?)
+      `,
+      parameters: [
+        module.id,
+        JSON.stringify(module.tags),
+        module.owner
+      ]
+    }
+  }
 
   return (module) => {
     return of(module)
-      .chain(fromPromise(async (module) =>
-        applySpec({
-          _id: (module) => createModuleId({ moduleId: module.id }),
-          moduleId: prop('id'),
-          tags: prop('tags'),
-          owner: prop('owner'),
-          type: always('module')
-        })(module)
-      ))
       /**
        * Ensure the expected shape before writing to the db
        */
@@ -47,75 +43,75 @@ export function saveModuleWith ({ pouchDb, logger: _logger }) {
       })
       .chain((doc) =>
         of(doc)
-          .chain(fromPromise((doc) => pouchDb.put(doc)))
-          .bichain(
-            (err) => {
-              /**
-               * Already exists, so just return the doc
-               */
-              if (err.status === 409) return Resolved(doc)
-              return Rejected(err)
-            },
-            Resolved
-          )
-          .map(always(doc._id))
+          .map(createQuery)
+          .chain(fromPromise((query) => db.run(query)))
+          .map(always(doc.id))
       )
       .toPromise()
   }
 }
 
-export function findModuleWith ({ pouchDb }) {
-  return ({ moduleId }) => {
-    return of({ moduleId })
-      .chain(fromPromise(() => pouchDb.get(createModuleId({ moduleId }))))
-      .bichain(
-        (err) => {
-          if (err.status === 404) return Rejected({ status: 404, message: 'Module not found' })
-          return Rejected(err)
-        },
-        (found) => of(found)
-          /**
-           * Ensure the input matches the expected
-           * shape
-           */
-          .map(moduleDocSchema.parse)
-          .map(applySpec({
-            id: prop('moduleId'),
-            tags: prop('tags'),
-            owner: prop('owner')
-          }))
-      )
-      .toPromise()
+export function findModuleWith ({ db }) {
+  function createQuery ({ moduleId }) {
+    return {
+      sql: `
+        SELECT id, tags, owner
+        FROM ${MODULES_TABLE}
+        WHERE
+          id = ?
+      `,
+      parameters: [moduleId]
+    }
   }
+  return ({ moduleId }) => of(moduleId)
+    .chain(fromPromise((id) => db.query(createQuery({ moduleId: id }))))
+    .map(defaultTo([]))
+    .map(head)
+    .chain((row) => row ? Resolved(row) : Rejected({ status: 404, message: 'Module not found' }))
+    .map(evolve({
+      tags: JSON.parse
+    }))
+    .map(moduleDocSchema.parse)
+    .map(applySpec({
+      id: prop('id'),
+      tags: prop('tags'),
+      owner: prop('owner')
+    }))
+    .toPromise()
 }
 
 export function evaluatorWith ({ evaluate }) {
   const EVAL_DEFER_BACKPRESSURE = 10
-  return ({ moduleId, gas, memLimit }) => of({ moduleId, gas, memLimit })
+  return ({ moduleId, moduleOptions }) =>
+    of(moduleOptions)
     /**
      * Create an evaluator function scoped to this particular
      * stream of messages
      */
-    .chain(fromPromise(async () => {
-      const streamId = await new Promise((resolve, reject) =>
-        randomBytes(8, (err, buffer) => err ? reject(err) : resolve(buffer.toString('hex')))
-      )
+      .chain(fromPromise(async (moduleOptions) => {
+        const streamId = await new Promise((resolve, reject) =>
+          randomBytes(8, (err, buffer) => err ? reject(err) : resolve(buffer.toString('hex')))
+        )
 
-      let backpressure = 0
+        let backpressure = 0
 
-      return ({ name, processId, Memory, message, AoGlobal }) =>
-        Promise.resolve(!(backpressure = ++backpressure % EVAL_DEFER_BACKPRESSURE))
-          .then(async (defer) => {
-            /**
-             * defer the next wasm module invocation to the
-             * end of the current event queue.
-             *
-             * We may want to defer to prevent starvation of other tasks on the main thread
-             */
-            if (defer) await new Promise(resolve => setImmediate(resolve))
+        return (args) =>
+          Promise.resolve(!(backpressure = ++backpressure % EVAL_DEFER_BACKPRESSURE))
+            .then(async (defer) => {
+              /**
+               * defer the next wasm module invocation to the
+               * end of the current event queue.
+               *
+               * We may want to defer to prevent starvation of other tasks on the main thread
+               */
+              if (defer) await new Promise(resolve => setImmediate(resolve))
 
-            return evaluate({ streamId, moduleId, gas, memLimit, name, processId, Memory, message, AoGlobal })
-          })
-    }))
-    .toPromise()
+              args.streamId = streamId
+              args.moduleId = moduleId
+              args.moduleOptions = moduleOptions
+
+              return evaluate(args)
+            })
+      }))
+      .toPromise()
 }

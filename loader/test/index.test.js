@@ -15,11 +15,11 @@ const MODULE_PATH = process.env.MODULE_PATH || '../src/index.cjs'
 console.log(`${MODULE_PATH}`)
 
 const { default: AoLoader } = await import(MODULE_PATH)
-const wasmBinary = fs.readFileSync('./test/process/process.wasm')
+const wasmBinary = fs.readFileSync('./test/legacy/process.wasm')
 
 describe('loader', async () => {
   it('load wasm and evaluate message', async () => {
-    const handle = await AoLoader(wasmBinary)
+    const handle = await AoLoader(wasmBinary, { format: 'wasm32-unknown-emscripten' })
     const mainResult = await handle(null,
       {
         Owner: 'tom',
@@ -53,7 +53,7 @@ describe('loader', async () => {
        * that any Response will do
        */
       new Response(
-        Readable.toWeb(createReadStream('./test/process/process.wasm')),
+        Readable.toWeb(createReadStream('./test/legacy/process.wasm')),
         { headers: { 'Content-Type': 'application/wasm' } }
       )
     )
@@ -67,7 +67,7 @@ describe('loader', async () => {
          */
         .then((mod) => WebAssembly.instantiate(mod, info))
         .then((instance) => receiveInstance(instance))
-    })
+    }, { format: 'wasm32-unknown-emscripten' })
     const result = await handle(null,
       { Owner: 'tom', Target: '1', Tags: [{ name: 'Action', value: 'inc' }], Data: '' },
       { Process: { Id: '1', Tags: [] } }
@@ -83,7 +83,7 @@ describe('loader', async () => {
   })
 
   it('should load previous memory', async () => {
-    const handle = await AoLoader(wasmBinary)
+    const handle = await AoLoader(wasmBinary, { format: 'wasm32-unknown-emscripten' })
     const result = await handle(null,
       { Owner: 'tom', Target: '1', Tags: [{ name: 'Action', value: 'inc' }], Data: '' },
       { Process: { Id: '1', Tags: [] } }
@@ -101,7 +101,7 @@ describe('loader', async () => {
   })
 
   it('should refill the gas on every invocation', async () => {
-    const handle = await AoLoader(wasmBinary)
+    const handle = await AoLoader(wasmBinary, { format: 'wasm32-unknown-emscripten' })
 
     const result = await handle(null,
       { Owner: 'tom', Target: '1', Tags: [{ name: 'Action', value: 'inc' }], Data: '' },
@@ -122,7 +122,7 @@ describe('loader', async () => {
   })
 
   it('should run out of gas', async () => {
-    const handle = await AoLoader(wasmBinary, 9_000_000_000)
+    const handle = await AoLoader(wasmBinary, { format: 'wasm32-unknown-emscripten', computeLimit: 9_000_000_000 })
     try {
       await handle(null,
         { Owner: 'tom', Target: '1', Tags: [{ name: 'Action', value: 'foo' }], Data: '' },
@@ -136,60 +136,8 @@ describe('loader', async () => {
     assert.ok(true)
   })
 
-  it('should resize the initial heap to accomodate the larger incoming buffer', async () => {
-    const wasmBinary = fs.readFileSync('./test/aos/process.wasm')
-
-    const handle = await AoLoader(wasmBinary, 9_000_000_000_000)
-    const mainResult = handle(null,
-      {
-        Owner: 'tom',
-        Target: 'FOO',
-        Tags: [
-          { name: 'Action', value: 'Eval' }
-        ],
-        Module: '1234',
-        'Block-Height': '1234',
-        Id: '1234',
-        Data: `
-          Data = {}
-          for i = 1, 100000 do
-            table.insert(Data, "Hello")
-          end
-        `
-      },
-      {
-        Process: { Owner: 'tom', Id: 'ctr-id-456', Tags: [{ name: 'Module', value: '1234' }], Module: '1234', 'Block-Height': '1234' }
-      }
-    )
-
-    assert.ok(mainResult.Memory)
-    assert.ok(mainResult.hasOwnProperty('Messages'))
-    assert.ok(mainResult.hasOwnProperty('Spawns'))
-    assert.ok(mainResult.hasOwnProperty('Error'))
-    // assert.equal(mainResult.Output, 'Hello World')
-    // assert.equal(mainResult.GasUsed, 463918939)
-    assert.ok(true)
-
-    const nextHandle = await AoLoader(wasmBinary, 9_000_000_000_000)
-    const nextResult = nextHandle(mainResult.Memory,
-      {
-        Owner: 'tom',
-        Target: 'FOO',
-        Tags: [
-          { name: 'Action', value: 'Eval' }
-        ],
-        Data: '#Data'
-      },
-      {
-        Process: { Id: 'ctr-id-456', Tags: [] }
-      }
-    )
-    assert.ok(nextResult.hasOwnProperty('Output'))
-    assert.equal(nextResult.Output.data.output, 100000)
-  })
-
   it('should get deterministic date', async () => {
-    const handle = await AoLoader(wasmBinary)
+    const handle = await AoLoader(wasmBinary, { format: 'wasm32-unknown-emscripten' })
 
     const result = await handle(null,
       { Owner: 'tom', Target: '1', Tags: [{ name: 'Action', value: 'Date' }], Data: '' },
@@ -210,7 +158,7 @@ describe('loader', async () => {
   })
 
   it('should get deterministic random numbers', async () => {
-    const handle = await AoLoader(wasmBinary)
+    const handle = await AoLoader(wasmBinary, { format: 'wasm32-unknown-emscripten' })
 
     const result = await handle(null,
       { Owner: 'tom', Target: '1', Tags: [{ name: 'Action', value: 'Random' }], Data: '' },
@@ -231,15 +179,15 @@ describe('loader', async () => {
   })
 
   it('should not list files', async () => {
-    const handle = await AoLoader(wasmBinary)
+    const handle = await AoLoader(wasmBinary, { format: 'wasm32-unknown-emscripten' })
     try {
-    // eslint-disable-next-line
-    const result = await handle(null,
+      // eslint-disable-next-line
+      const result = await handle(null,
         { Owner: 'tom', Target: '1', Tags: [{ name: 'Action', value: 'Directory' }], Data: '' },
         { Process: { Id: '1', Tags: [] } }
       )
     } catch (e) {
-      assert.equal(e, '[string ".process"]:47: \'popen\' not supported')
+      assert.equal(e, '[string ".process"]:51: \'popen\' not supported')
       assert.ok(true)
     }
 
@@ -258,4 +206,24 @@ describe('loader', async () => {
   //   //assert.equal(result.Error, 'Out of memory')
   //   assert.ok(true)
   // })
+
+  it('should handle Assignments', async () => {
+    const handle = await AoLoader(wasmBinary, { format: 'wasm32-unknown-emscripten' })
+
+    // eslint-disable-next-line
+    const result = await handle(null,
+      { Owner: 'tom', Target: '1', Tags: [{ name: 'Action', value: 'Assignment' }], Data: '' },
+      { Process: { Id: '1', Tags: [] } }
+    )
+
+    assert.deepStrictEqual(
+      result.Output,
+      [
+        { Processes: ['pid-1', 'pid-2'], Message: 'mid-1' },
+        { Processes: ['pid-1', 'pid-2'], Message: 'mid-2' }
+      ]
+    )
+
+    assert.ok(true)
+  })
 })

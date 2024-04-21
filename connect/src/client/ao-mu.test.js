@@ -2,8 +2,8 @@ import { describe, test } from 'node:test'
 import * as assert from 'node:assert'
 
 import { createLogger } from '../logger.js'
-import { deployMessageSchema, deployMonitorSchema, deployProcessSchema, signerSchema } from '../dal.js'
-import { deployMessageWith, deployProcessWith, deployMonitorWith, deployUnmonitorWith } from './ao-mu.js'
+import { deployMessageSchema, deployMonitorSchema, deployProcessSchema, signerSchema, deployAssignSchema } from '../dal.js'
+import { deployMessageWith, deployProcessWith, deployMonitorWith, deployUnmonitorWith, deployAssignWith } from './ao-mu.js'
 
 const MU_URL = globalThis.MU_URL || 'https://ao-mu-1.onrender.com'
 const logger = createLogger('@permaweb/ao-sdk:readState')
@@ -23,6 +23,7 @@ describe('ao-mu', () => {
                 'Content-Type': 'application/octet-stream',
                 Accept: 'application/json'
               },
+              redirect: 'follow',
               body: 'raw-buffer'
             })
 
@@ -72,6 +73,7 @@ describe('ao-mu', () => {
                 'Content-Type': 'application/octet-stream',
                 Accept: 'application/json'
               },
+              redirect: 'follow',
               body: 'raw-buffer'
             })
 
@@ -121,6 +123,7 @@ describe('ao-mu', () => {
                 'Content-Type': 'application/octet-stream',
                 Accept: 'application/json'
               },
+              redirect: 'follow',
               body: 'raw-buffer'
             })
 
@@ -173,6 +176,7 @@ describe('ao-mu', () => {
                 'Content-Type': 'application/octet-stream',
                 Accept: 'application/json'
               },
+              redirect: 'follow',
               body: 'raw-buffer'
             })
 
@@ -193,6 +197,64 @@ describe('ao-mu', () => {
             return { id: 'data-item-123', raw: 'raw-buffer' }
           }
         )
+      })
+    })
+  })
+
+  describe('deployAssignWith', () => {
+    test('deploy an assignment to the MU', async () => {
+      const deployAssign = deployAssignSchema.implement(
+        deployAssignWith({
+          MU_URL,
+          logger,
+          fetch: async (url, options) => {
+            assert.equal(url, `${MU_URL}?process-id=process-1&assign=message-1`)
+            assert.deepStrictEqual(options, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/octet-stream',
+                Accept: 'application/json'
+              }
+            })
+
+            return new Response(JSON.stringify({ id: 'assignment-id' }))
+          }
+        })
+      )
+
+      await deployAssign({
+        process: 'process-1',
+        message: 'message-1'
+      })
+    })
+  })
+
+  describe('deployAssignWith', () => {
+    test('deploy an assignment to the MU with base-layer and exclude', async () => {
+      const deployAssign = deployAssignSchema.implement(
+        deployAssignWith({
+          MU_URL,
+          logger,
+          fetch: async (url, options) => {
+            assert.equal(url, `${MU_URL}?process-id=process-1&assign=message-1&base-layer&exclude=data,tags`)
+            assert.deepStrictEqual(options, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/octet-stream',
+                Accept: 'application/json'
+              }
+            })
+
+            return new Response(JSON.stringify({ id: 'assignment-id' }))
+          }
+        })
+      )
+
+      await deployAssign({
+        process: 'process-1',
+        message: 'message-1',
+        baseLayer: true,
+        exclude: ['data', 'tags']
       })
     })
   })

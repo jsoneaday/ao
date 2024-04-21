@@ -1,4 +1,4 @@
-import { compose as composeStreams, Transform } from 'node:stream'
+import { compose as composeStreams, PassThrough, Transform } from 'node:stream'
 
 import { of } from 'hyper-async'
 import { mergeRight } from 'ramda'
@@ -6,8 +6,8 @@ import { z } from 'zod'
 import WarpArBundles from 'warp-arbundles'
 
 import { loadTransactionDataSchema, loadTransactionMetaSchema } from '../dal.js'
-import { streamSchema } from '../model.js'
-import { findRawTag } from '../utils.js'
+import { messageSchema, streamSchema } from '../model.js'
+import { mapFrom } from '../utils.js'
 
 const { createData } = WarpArBundles
 
@@ -21,6 +21,57 @@ const { createData } = WarpArBundles
 const ctxSchema = z.object({
   messages: streamSchema
 }).passthrough()
+
+function loadFromChainWith ({ loadTransactionData, loadTransactionMeta }) {
+  loadTransactionData = loadTransactionDataSchema.implement(loadTransactionData)
+  loadTransactionMeta = loadTransactionMetaSchema.implement(loadTransactionMeta)
+
+  return async ({ id, exclude = [], encodeData }) => {
+    const promises = []
+
+    const options = exclude.reduce((options, e) => {
+      options[`skip${e}`] = true
+      return options
+    }, {})
+
+    promises.push(loadTransactionMeta(id, options))
+
+    if (!exclude.includes('Data')) {
+      promises.push(
+        loadTransactionData(id)
+          /**
+           * Encode the array buffer of the raw data as base64, if desired (Load messages),
+           * otherwise parse the data as text (Assignments)
+           *
+           * TODO: should cu use Content-Type tag to parse data? ie. json, text, etc.
+           * For now, Data is always text or base64-encoded array buffer, so this replicates
+           * current functionality
+           */
+          .then((res) => encodeData
+            ? res.arrayBuffer()
+              .then((ab) => Buffer.from(ab))
+              .then((data) => bytesToBase64(data))
+            : res.text())
+      )
+    }
+
+    return Promise.all(promises)
+      /**
+       * Construct the JSON representation of a DataItem using
+       * raw transaction data, and metadata about the
+       * transactions (in the shape of a GQL Gateway Transaction)
+       */
+      .then(async ([meta, Data]) => ({
+        Id: meta.id,
+        Signature: meta.signature,
+        Owner: meta.owner.address,
+        From: mapFrom({ tags: meta.tags, owner: meta.owner.address }),
+        Tags: meta.tags,
+        Anchor: meta.anchor,
+        Data
+      }))
+  }
+}
 
 /**
  * Converts an arraybuffer into base64, also handling
@@ -94,52 +145,31 @@ export function maybeMessageIdWith ({ logger }) {
   }
 }
 
-export function maybeAoLoadWith ({ loadTransactionData, loadTransactionMeta, logger }) {
-  loadTransactionData = loadTransactionDataSchema.implement(loadTransactionData)
-  loadTransactionMeta = loadTransactionMetaSchema.implement(loadTransactionMeta)
+export function maybeAoAssignmentWith ({ loadTransactionData, loadTransactionMeta }) {
+  const loadFromChain = loadFromChainWith({ loadTransactionData, loadTransactionMeta })
 
-  /**
-   * Construct the JSON representation of a DataItem using
-   * raw transaction data, and metadata about the
-   * transactions (in the shape of a GQL Gateway Transaction)
-   */
-  function messageFromParts ({ data, meta }) {
-    return {
-      Id: meta.id,
-      Signature: meta.signature,
-      Owner: meta.owner.address,
-      Tags: meta.tags,
-      Anchor: meta.anchor,
-      /**
-       * Encode the array buffer of the raw data as base64
-       */
-      Data: bytesToBase64(data)
-    }
-  }
-
-  return async function * maybeAoLoad (messages) {
+  return async function * maybeAoAssignment (messages) {
     for await (const cur of messages) {
-      const tag = findRawTag('Load', cur.message.Tags)
       /**
-       * Either a cron message or not an ao-load message, so no work is needed
+       * Not an Assignment so nothing to do
        */
-      if (!tag || cur.message.Cron) {
-        yield cur
-        continue
-      }
+      if (!cur.isAssignment) { yield cur; continue }
 
-      // logger('Hydrating Load message for "%s" from transaction "%s"', cur.message.Id, tag.value)
       /**
-       * - Fetch raw data and meta from gateway
-       * - contruct the data item JSON, encoding the raw data as base64
-       * - set as 'data' on the ao-load message
+       * The values are loaded from chain and used to overwrite
+       * the specific fields on the message
+       *
+       * TODO: should Owner be overwritten? If so, what about From?
+       * currently, this will overwrite both, set to the owner of the message on-chain
        */
-      cur.message.Data = await Promise.all([
-        loadTransactionData(tag.value).then(res => res.arrayBuffer()),
-        loadTransactionMeta(tag.value)
-      ]).then(([data, meta]) => messageFromParts({ data, meta }))
-
-      // logger('Hydrated Load message for "%s" from transaction "%s" and attached as data', cur.message.Id, tag.value)
+      cur.message = mergeRight(
+        cur.message,
+        await loadFromChain({
+          id: cur.message.Id,
+          exclude: cur.exclude,
+          encodeData: false
+        })
+      )
 
       yield cur
     }
@@ -165,30 +195,45 @@ export function hydrateMessagesWith (env) {
   env = { ...env, logger }
 
   const maybeMessageId = maybeMessageIdWith(env)
-  const maybeAoLoad = maybeAoLoadWith(env)
+  const maybeAoAssignment = maybeAoAssignmentWith(env)
 
   return (ctx) => {
     return of(ctx)
       .map(({ messages: $messages }) => {
         /**
-         * There is some sort of bug in pipeline which will consistently cause this stream
-         * to not end IFF it emits an error.
-         *
-         * When errors are thrown in other places, pipeline seems to work and close the stream just fine.
-         * So not sure what's going on here.
-         *
-         * This seemed to be the only way to successfully
-         * end the stream, thus closing the pipeline, and resolving
-         * the promise wrapping the stream (see finished in evaluate.js)
-         *
          * See https://github.com/nodejs/node/issues/40279#issuecomment-1061124430
          */
-        $messages.on('error', () => $messages.emit('end'))
+        // $messages.on('error', () => $messages.emit('end'))
 
         return composeStreams(
+          /**
+           * There is some sort of bug in pipeline which will consistently cause this stream
+           * to not end IFF it emits an error.
+           *
+           * When errors are thrown in other points in the stream, pipeline seems to work and
+           * close the stream just fine, so not sure what's going on here.
+           *
+           * Before, we had a workaround to manually emit 'end' from the stream on eror, which seemed
+           * to work (See above commented out .on())
+           *
+           * That was UNTIL we composed more than 2 Transform streams after it, which caused that
+           * workaround to no longer work -- very strange.
+           *
+           * For some reason, wrapping the subsequent Transforms in another compose,
+           * AND adding a PassThrough stream at the end successfully ends the stream on errors,
+           * thus closing the pipeline, and resolving the promise wrapping the stream
+           * (see finished in evaluate.js)
+           */
           $messages,
-          Transform.from(maybeMessageId),
-          Transform.from(maybeAoLoad)
+          composeStreams(
+            Transform.from(maybeMessageId),
+            Transform.from(maybeAoAssignment),
+            // Ensure every message emitted satisfies the schema
+            Transform.from(async function * (messages) {
+              for await (const cur of messages) yield messageSchema.parse(cur)
+            })
+          ),
+          new PassThrough({ objectMode: true })
         )
       })
       .map(messages => ({ messages }))

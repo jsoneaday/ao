@@ -4,12 +4,13 @@ import { Readable } from 'node:stream'
 import { basename, join } from 'node:path'
 
 import { fromPromise, of, Rejected, Resolved } from 'hyper-async'
-import { always, applySpec, compose, identity, map, path, prop, transduce } from 'ramda'
+import { always, applySpec, compose, defaultTo, evolve, head, identity, map, path, prop, transduce } from 'ramda'
 import { z } from 'zod'
 import { LRUCache } from 'lru-cache'
 
+import { isEarlierThan, isEqualTo, isLaterThan } from '../utils.js'
 import { processSchema } from '../model.js'
-import { COLLATION_SEQUENCE_MIN_CHAR } from './pouchdb.js'
+import { PROCESSES_TABLE, COLLATION_SEQUENCE_MIN_CHAR } from './sqlite.js'
 
 const gunzipP = promisify(gunzip)
 const gzipP = promisify(gzip)
@@ -125,48 +126,14 @@ export function loadProcessCacheUsage () {
 }
 
 const processDocSchema = z.object({
-  _id: z.string().min(1),
-  processId: processSchema.shape.id,
+  id: z.string().min(1),
   signature: processSchema.shape.signature,
   data: processSchema.shape.data,
   anchor: processSchema.shape.anchor,
   owner: processSchema.shape.owner,
   tags: processSchema.shape.tags,
-  block: processSchema.shape.block,
-  type: z.literal('process')
+  block: processSchema.shape.block
 })
-
-function isLaterThan (eval1, eval2) {
-  const t1 = `${eval1.timestamp}`
-  const t2 = `${eval2.timestamp}`
-  /**
-   * timestamps are equal some might be two crons on overlapping interval,
-   * so compare the crons
-   */
-  if (t2 === t1) return (eval2.cron || '') > (eval1.cron || '')
-
-  return t2 > t1
-}
-
-function isEarlierThan (eval1, eval2) {
-  const t1 = `${eval1.timestamp}`
-  const t2 = `${eval2.timestamp}`
-  /**
-   * timestamps are equal some might be two crons on overlapping interval,
-   * so compare the crons
-   */
-  if (t2 === t1) return (eval2.cron || '') < (eval1.cron || '')
-
-  return t2 < t1
-}
-
-function isEqualTo (eval1, eval2) {
-  const t1 = `${eval1.timestamp}`
-  const t2 = `${eval2.timestamp}`
-
-  return t2 === t1 &&
-    (eval2.cron || '') === (eval1.cron || '')
-}
 
 function latestCheckpointBefore ({ timestamp, ordinate, cron }) {
   return (latest, checkpoint) => {
@@ -195,70 +162,71 @@ function latestCheckpointBefore ({ timestamp, ordinate, cron }) {
   }
 }
 
-export function createProcessId ({ processId }) {
-  /**
-   * transactions can sometimes start with an underscore,
-   * which is not allowed in PouchDB, so prepend to create
-   * an _id
-   */
-  return `proc-${processId}`
-}
+export function findProcessWith ({ db }) {
+  function createQuery ({ processId }) {
+    return {
+      sql: `
+        SELECT id, signature, data, anchor, owner, tags, block
+        FROM ${PROCESSES_TABLE}
+        WHERE
+          id = ?;
+      `,
+      parameters: [processId]
+    }
+  }
 
-export function findProcessWith ({ pouchDb }) {
   return ({ processId }) => of(processId)
-    .chain(fromPromise(id => pouchDb.get(createProcessId({ processId: id }))))
-    .bichain(
-      (err) => {
-        if (err.status === 404) return Rejected({ status: 404, message: 'Process not found' })
-        return Rejected(err)
-      },
-      (found) => of(found)
-        .map(processDocSchema.parse)
-        .map(applySpec({
-          id: prop('processId'),
-          signature: prop('signature'),
-          data: prop('data'),
-          anchor: prop('anchor'),
-          owner: prop('owner'),
-          tags: prop('tags'),
-          block: prop('block')
-        }))
-    )
+    .chain(fromPromise((id) => db.query(createQuery({ processId: id }))))
+    .map(defaultTo([]))
+    .map(head)
+    .chain((row) => row ? Resolved(row) : Rejected({ status: 404, message: 'Process not found' }))
+    .map(evolve({
+      tags: JSON.parse,
+      block: JSON.parse
+    }))
+    .map(processDocSchema.parse)
+    .map(applySpec({
+      id: prop('id'),
+      signature: prop('signature'),
+      data: prop('data'),
+      anchor: prop('anchor'),
+      owner: prop('owner'),
+      tags: prop('tags'),
+      block: prop('block')
+    }))
     .toPromise()
 }
 
-export function saveProcessWith ({ pouchDb }) {
+export function saveProcessWith ({ db }) {
+  function createQuery (process) {
+    return {
+      sql: `
+        INSERT OR IGNORE INTO ${PROCESSES_TABLE}
+        (id, signature, data, anchor, owner, tags, block)
+        VALUES (?, ?, ?, ?, ?, ?, ?);
+      `,
+      parameters: [
+        process.id,
+        process.signature,
+        process.data,
+        process.anchor,
+        process.owner,
+        JSON.stringify(process.tags),
+        JSON.stringify(process.block)
+      ]
+    }
+  }
   return (process) => {
     return of(process)
-      .map(applySpec({
-        _id: process => createProcessId({ processId: process.id }),
-        processId: prop('id'),
-        signature: prop('signature'),
-        data: prop('data'),
-        anchor: prop('anchor'),
-        owner: prop('owner'),
-        tags: prop('tags'),
-        block: prop('block'),
-        type: always('process')
-      }))
       /**
        * Ensure the expected shape before writing to the db
        */
       .map(processDocSchema.parse)
       .chain((doc) =>
         of(doc)
-          .chain(fromPromise((doc) => pouchDb.put(doc)))
-          .bichain(
-            (err) => {
-              /**
-               * Already exists, so just return the doc
-               */
-              if (err.status === 409) return Resolved(doc)
-              return Rejected(err)
-            },
-            Resolved
-          )
-          .map(always(doc._id))
+          .map(createQuery)
+          .chain(fromPromise((query) => db.run(query)))
+          .map(always(doc.id))
       )
       .toPromise()
   }
@@ -314,22 +282,75 @@ export function writeCheckpointFileWith ({ DIR, writeFile }) {
   }
 }
 
+/**
+ * ################################
+ * ##### Checkpoint query utils ###
+ * ################################
+ */
+
+function queryCheckpointsWith ({ queryGateway, queryCheckpointGateway, logger }) {
+  queryGateway = fromPromise(queryGateway)
+  queryCheckpointGateway = fromPromise(queryCheckpointGateway)
+
+  return ({ query, variables, processId, timestamp, ordinate, cron }) => {
+    const queryCheckpoint = (gateway, name = 'gateway') => (attempt) => () =>
+      gateway({ query, variables })
+        .bimap(
+          (err) => {
+            logger(
+              'Error encountered querying %s for Checkpoint for process "%s", before "%j". Attempt %d...',
+              name,
+              processId,
+              { timestamp, ordinate, cron },
+              attempt,
+              err
+            )
+            return variables
+          },
+          identity
+        )
+
+    const queryOnDefaultGateway = queryCheckpoint(queryGateway)
+    /**
+     * Because the Checkpoint gateway is defaulted to the default gateway, if
+     * no Checkpoint gateway is configured, this is effectively equivalent to
+     * queryOnDefaultGateway.
+     *
+     * This means we maintain retry logic on default gateway
+     */
+    const queryOnCheckpointGateway = queryCheckpoint(queryCheckpointGateway, 'Checkpoint gateway')
+
+    return of()
+      .chain(queryOnDefaultGateway(1))
+      /**
+       * Retry the default gateway one more time
+       */
+      .bichain(queryOnDefaultGateway(2), Resolved)
+      /**
+       * Fallback to gateway configured specifically for Checkpoints.
+       */
+      .bichain(queryOnCheckpointGateway(3), Resolved)
+  }
+}
+
 export function findProcessMemoryBeforeWith ({
   cache,
   findCheckpointFileBefore,
   readCheckpointFile,
   address,
   queryGateway,
+  queryCheckpointGateway,
   loadTransactionData,
   PROCESS_IGNORE_ARWEAVE_CHECKPOINTS,
   logger: _logger
 }) {
   const logger = _logger.child('ao-process:findProcessMemoryBefore')
+  address = fromPromise(address)
   findCheckpointFileBefore = fromPromise(findCheckpointFileBefore)
   readCheckpointFile = fromPromise(readCheckpointFile)
-  address = fromPromise(address)
-  queryGateway = fromPromise(queryGateway)
   loadTransactionData = fromPromise(loadTransactionData)
+
+  const queryCheckpoints = queryCheckpointsWith({ queryGateway, queryCheckpointGateway, logger })
 
   const GET_AO_PROCESS_CHECKPOINTS = `
     query GetAoProcessCheckpoints(
@@ -415,7 +436,9 @@ export function findProcessMemoryBeforeWith ({
       .chain(fromPromise(decodeData(checkpoint.encoding)))
   }
 
-  function maybeCached ({ processId, timestamp, ordinate, cron }) {
+  function maybeCached (args) {
+    const { processId, timestamp, ordinate, cron, omitMemory } = args
+
     return of(processId)
       .chain((processId) => {
         const cached = cache.get(processId)
@@ -427,7 +450,7 @@ export function findProcessMemoryBeforeWith ({
         if (
           !cached ||
           (timestamp && isLaterThan({ timestamp, ordinate, cron }, cached.evaluation))
-        ) return Rejected({ processId, timestamp, ordinate, cron })
+        ) return Rejected(args)
 
         logger(
           'MEMORY CHECKPOINT: Found Checkpoint in in-memory cache for process "%s" before message with parameters "%j": "%j"',
@@ -437,7 +460,10 @@ export function findProcessMemoryBeforeWith ({
         )
 
         return of(cached)
-          .chain(fromPromise((cached) => gunzipP(cached.Memory)))
+          .chain((cached) => {
+            if (omitMemory) return Resolved(null)
+            return of(cached).chain(fromPromise((cached) => gunzipP(cached.Memory)))
+          })
           /**
            * Finally map the Checkpoint to the expected shape
            */
@@ -451,13 +477,15 @@ export function findProcessMemoryBeforeWith ({
       })
   }
 
-  function maybeFile ({ processId, timestamp, ordinate, cron }) {
+  function maybeFile (args) {
+    const { processId, timestamp, ordinate, cron, omitMemory } = args
+
     /**
      * Attempt to find the lastest checkpoint in a file before the parameters
      */
     return findCheckpointFileBefore({ processId, timestamp, ordinate, cron })
       .chain((latest) => {
-        if (!latest) return Rejected({ processId, timestamp, ordinate, cron })
+        if (!latest) return Rejected(args)
 
         logger(
           'FILE CHECKPOINT: Found Checkpoint for process "%s", before "%j", on Filesystem, with parameters "%j"',
@@ -475,7 +503,10 @@ export function findProcessMemoryBeforeWith ({
           .chain(readCheckpointFile)
           .chain((checkpoint) =>
             of(checkpoint.Memory)
-              .chain(downloadCheckpointFromArweave)
+              .chain((id) => {
+                if (omitMemory) return Resolved(null)
+                return downloadCheckpointFromArweave(id)
+              })
               /**
                * Finally map the Checkpoint to the expected shape
                */
@@ -495,7 +526,7 @@ export function findProcessMemoryBeforeWith ({
                     { checkpointTxId: checkpoint.id, ...checkpoint },
                     err
                   )
-                  return { processId, timestamp, ordinate, cron }
+                  return args
                 },
                 identity
               )
@@ -503,47 +534,27 @@ export function findProcessMemoryBeforeWith ({
       })
   }
 
-  function maybeCheckpointFromArweave ({ processId, timestamp, ordinate, cron }) {
+  function maybeCheckpointFromArweave (args) {
+    const { processId, timestamp, ordinate, cron, omitMemory } = args
+
     if (PROCESS_IGNORE_ARWEAVE_CHECKPOINTS.includes(processId)) {
       logger('Arweave Checkpoints are ignored for process "%s". Not attempting to query gateway...', processId)
-      return of({ processId, timestamp, ordinate, cron })
-        .chain(Rejected)
+      return Rejected(args)
     }
 
-    const queryCheckpoint = (attempt) => (variables) =>
-      queryGateway({ query: GET_AO_PROCESS_CHECKPOINTS, variables })
-        .bimap(
-          (err) => {
-            logger(
-              'Error encountered querying gateway for Checkpoint for process "%s", before "%j". Attempt %d...',
-              processId,
-              { timestamp, ordinate, cron },
-              attempt,
-              err
-            )
-            return variables
-          },
-          identity
-        )
-
     return address()
-      .map((owner) => ({ owner, processId, limit: 50 }))
-      /**
-       * The gateway tends to timeout when making this query,
-       * but then will start working on retries.
-       *
-       * (I suspect the gateway is performing work, and times out on the first request,
-       * but then work is cached, which HITs on subsequent requests)
-       */
-      .chain(queryCheckpoint(1))
-      // Retry
-      .bichain(queryCheckpoint(2), Resolved)
-      // Retry
-      .bichain(queryCheckpoint(3), Resolved)
+      .chain((owner) => queryCheckpoints({
+        query: GET_AO_PROCESS_CHECKPOINTS,
+        variables: { owner, processId, limit: 50 },
+        processId,
+        timestamp,
+        ordinate,
+        cron
+      }))
       .map(path(['data', 'transactions', 'edges']))
       .map(determineLatestCheckpointBefore({ timestamp, ordinate, cron }))
       .chain((latestCheckpoint) => {
-        if (!latestCheckpoint) return Rejected({ processId, timestamp, ordinate, cron })
+        if (!latestCheckpoint) return Rejected(args)
 
         logger(
           'ARWEAVE CHECKPOINT: Found Checkpoint for process "%s", before "%j", on Arweave, with parameters "%j"',
@@ -556,7 +567,11 @@ export function findProcessMemoryBeforeWith ({
          * We have found a Checkpoint that we can use, so
          * now let's load the snapshotted Memory from arweave
          */
-        return downloadCheckpointFromArweave(latestCheckpoint)
+        return of()
+          .chain(() => {
+            if (omitMemory) return Resolved(null)
+            return downloadCheckpointFromArweave(latestCheckpoint)
+          })
           /**
            * Finally map the Checkpoint to the expected shape
            */
@@ -580,7 +595,7 @@ export function findProcessMemoryBeforeWith ({
                 { checkpointTxId: latestCheckpoint.id, ...latestCheckpoint },
                 err
               )
-              return { processId, timestamp, ordinate, cron }
+              return args
             },
             identity
           )
@@ -616,8 +631,8 @@ export function findProcessMemoryBeforeWith ({
     })
   }
 
-  return ({ processId, timestamp, ordinate, cron }) =>
-    of({ processId, timestamp, ordinate, cron })
+  return ({ processId, timestamp, ordinate, cron, omitMemory = false }) =>
+    of({ processId, timestamp, ordinate, cron, omitMemory })
       .chain(maybeCached)
       .bichain(maybeFile, Resolved)
       .bichain(maybeCheckpointFromArweave, Resolved)
@@ -688,6 +703,7 @@ export function saveLatestProcessMemoryWith ({ cache, logger, saveCheckpoint, EA
 }
 
 export function saveCheckpointWith ({
+  queryCheckpointGateway,
   queryGateway,
   hashWasmMemory,
   buildAndSignDataItem,
@@ -698,7 +714,6 @@ export function saveCheckpointWith ({
   PROCESS_CHECKPOINT_CREATION_THROTTLE,
   DISABLE_PROCESS_CHECKPOINT_CREATION
 }) {
-  queryGateway = fromPromise(queryGateway)
   address = fromPromise(address)
   hashWasmMemory = fromPromise(hashWasmMemory)
   buildAndSignDataItem = fromPromise(buildAndSignDataItem)
@@ -706,6 +721,8 @@ export function saveCheckpointWith ({
   writeCheckpointFile = fromPromise(writeCheckpointFile)
 
   const logger = _logger.child('ao-process:saveCheckpoint')
+
+  const queryCheckpoints = queryCheckpointsWith({ queryGateway, queryCheckpointGateway, logger })
 
   /**
    * We will first query the gateway to determine if this CU
@@ -838,47 +855,31 @@ export function saveCheckpointWith ({
   }
 
   function createCheckpoint ({ Memory, encoding, processId, moduleId, timestamp, epoch, ordinate, nonce, blockHeight, cron }) {
-    const queryCheckpoint = (attempt) => (variables) =>
-      queryGateway({ query: GET_AO_PROCESS_CHECKPOINTS(!!cron), variables })
-        .bimap(
-          (err) => {
-            logger(
-              'Error encountered querying gateway for Checkpoint for process "%s", before "%j". Attempt %d...',
-              processId,
-              { timestamp, ordinate, cron },
-              attempt,
-              err
-            )
-            return variables
-          },
-          identity
-        )
+    logger(
+      'Checking Gateway for existing Checkpoint for evaluation: %j',
+      { moduleId, processId, epoch, nonce, timestamp, blockHeight, cron, encoding }
+    )
 
     return address()
-      .map((owner) => ({
-        owner,
+      .chain((owner) => queryCheckpoints({
+        query: GET_AO_PROCESS_CHECKPOINTS(!!cron),
+        variables: {
+          owner,
+          processId,
+          /**
+           * Some messages do not have a nonce (Cron Messages),
+           * but every message will have an ordinate set to the most recent nonce
+           * (Scheduled Message ordinate is equal to its nonce)
+           */
+          nonce: `${nonce || ordinate}`,
+          timestamp: `${timestamp}`,
+          cron
+        },
         processId,
-        /**
-         * Some messages do not have a nonce (Cron Messages),
-         * but every message will have an ordinate set to the most recent nonce
-         * (Scheduled Message ordinate is equal to its nonce)
-         */
-        nonce: `${nonce || ordinate}`,
-        timestamp: `${timestamp}`,
+        timestamp,
+        ordinate,
         cron
       }))
-      /**
-       * The gateway tends to timeout when making this query,
-       * but then will start working on retries.
-       *
-       * (I suspect the gateway is performing work, and times out on the first request,
-       * but then work is cached, which HITs on subsequent requests)
-       */
-      .chain(queryCheckpoint(1))
-      // Retry
-      .bichain(queryCheckpoint(2), Resolved)
-      // Retry
-      .bichain(queryCheckpoint(3), Resolved)
       .map(path(['data', 'transactions', 'edges', '0']))
       .chain((checkpoint) => {
         /**

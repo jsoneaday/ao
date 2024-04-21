@@ -22,6 +22,7 @@ This module will run in a browser or server environment.
     - [`connect`](#connect)
     - [`monitor`](#monitor)
     - [`dryrun`](#dryrun)
+    - [`assign`](#assign)
     - [Environment Variables](#environment-variables)
     - [`createDataItemSigner`](#createdataitemsigner)
 - [Debug Logging](#debug-logging)
@@ -129,7 +130,8 @@ If you would like the connect to use ao components other than the defaults, you
 can specify those components by providing their urls to `connect`. You can
 currently specify:
 
-- The GATEWAY_URL (`GATEWAY_URL`)
+- The GATEWAY_URL (`GATEWAY_URL`) (currently only used as the default host for `GRAPHQL_URL`)
+- The GRAPHQL_URL (`GRAPHQL_URL`) (defaults to `${GATEWAY_URL}/graphql`)
 - The Messenger Unit URL (`MU_URL`)
 - The Compute Unit URL (`CU_URL`)
 
@@ -138,10 +140,13 @@ import { connect } from "@permaweb/aoconnect";
 
 const { spawn, message, result } = connect({
   GATEWAY_URL: "...",
+  GRAPHQL_URL: "...",
   MU_URL: "...",
   CU_URL: "...",
 });
 ```
+
+> If `GATEWAY_URL` is set but `GRAPHQL_URL` is _not_ set, then the `GATEWAY_URL` provided **MUST** have a `/graphql` endpoint that serves the Arweave Gateway GraphQL Server. ie. `https://arweave.net/graphql`
 
 If any url is not provided, a library default will be used. In this sense,
 invoking `connect()` with no parameters or an empty object is functionally
@@ -193,6 +198,32 @@ const result = await dryrun({
 });
 
 console.log(result.Messages[0]);
+```
+
+#### `assign`
+
+Create an Assignment for an `ao` process
+
+```js
+import { assign } from "@permaweb/aoconnect";
+
+const processId = await assign({
+  process: 'process-id',
+  message: 'message-id',
+  exclude: ['Data', 'Tags', 'etc.'] // optional list of DataItem fields to exclude
+});
+```
+
+Create a Assignment for an `ao` process with an L1 transaction
+
+```js
+import { assign } from "@permaweb/aoconnect";
+
+const processId = await assign({
+  process: 'process-id',
+  message: 'txid',
+  baseLayer: true
+});
 ```
 
 #### Environment Variables

@@ -20,14 +20,12 @@ describe('ao-module', () => {
     test('find the module', async () => {
       const findModule = findModuleSchema.implement(
         findModuleWith({
-          pouchDb: {
-            get: async () => ({
-              _id: 'module-mod-123',
-              moduleId: 'mod-123',
-              tags: [{ name: 'foo', value: 'bar' }],
-              owner: 'owner-123',
-              type: 'module'
-            })
+          db: {
+            query: async () => [{
+              id: 'mod-123',
+              tags: JSON.stringify([{ name: 'foo', value: 'bar' }]),
+              owner: 'owner-123'
+            }]
           },
           logger
         })
@@ -44,8 +42,8 @@ describe('ao-module', () => {
     test('return 404 status if not found', async () => {
       const findModule = findModuleSchema.implement(
         findModuleWith({
-          pouchDb: {
-            get: async () => { throw { status: 404 } }
+          db: {
+            query: async () => undefined
           },
           logger
         })
@@ -63,8 +61,8 @@ describe('ao-module', () => {
     test('bubble error', async () => {
       const findModule = findModuleSchema.implement(
         findModuleWith({
-          pouchDb: {
-            get: async () => { throw { status: 500 } }
+          db: {
+            query: async () => { throw { status: 500 } }
           },
           logger
         })
@@ -80,19 +78,15 @@ describe('ao-module', () => {
     test('save the module', async () => {
       const saveModule = saveModuleSchema.implement(
         saveModuleWith({
-          pouchDb: {
-            put: async (doc) => {
-              const { _attachments, ...rest } = doc
-
-              assert.deepStrictEqual(rest, {
-                _id: 'module-mod-123',
-                moduleId: 'mod-123',
-                tags: [
+          db: {
+            run: async ({ parameters }) => {
+              assert.deepStrictEqual(parameters, [
+                'mod-123',
+                JSON.stringify([
                   { name: 'Module-Format', value: 'wasm32-unknown-emscripten' }
-                ],
-                owner: 'owner-123',
-                type: 'module'
-              })
+                ]),
+                'owner-123'
+              ])
               return Promise.resolve(true)
             }
           },
@@ -112,8 +106,10 @@ describe('ao-module', () => {
     test('noop if the module already exists', async () => {
       const saveModule = saveModuleSchema.implement(
         saveModuleWith({
-          pouchDb: {
-            put: async () => { throw { status: 409 } }
+          db: {
+            run: async ({ sql }) => {
+              assert.ok(sql.trim().startsWith('INSERT OR IGNORE'))
+            }
           },
           logger
         })
@@ -131,8 +127,21 @@ describe('ao-module', () => {
 
   describe('evaluateWith', () => {
     const moduleId = 'foo-module'
+    const moduleOptions = {
+      format: 'wasm32-unknown-emscripten',
+      inputEncoding: 'JSON-1',
+      outputEncoding: 'JSON-1',
+      memoryLimit: 524_288_000, // in bytes
+      computeLimit: 9_000_000_000_000,
+      extensions: []
+    }
     const args = {
       name: 'foobar Message',
+      noSave: false,
+      deepHash: undefined,
+      cron: undefined,
+      ordinate: '1',
+      isAssignment: false,
       processId: 'foobar-process',
       Memory: null,
       message: {
@@ -154,21 +163,28 @@ describe('ao-module', () => {
 
     test('should eval the message', async () => {
       const evaluator = evaluatorWith({
-        evaluate: ({ streamId, moduleId: mId, gas, memLimit, name, processId, Memory, message, AoGlobal }) => {
+        evaluate: ({ streamId, moduleId: mId, moduleOptions: mOptions, Memory, message, AoGlobal, ...rest }) => {
           assert.ok(streamId)
           assert.equal(mId, moduleId)
-          assert.equal(gas, 9_000_000_000_000)
-          assert.equal(memLimit, 8_000_000_000_000)
-          assert.equal(name, args.name)
-          assert.equal(processId, args.processId)
+          assert.deepStrictEqual(mOptions, moduleOptions)
 
-          return AoLoader(readFileSync('./test/processes/happy/process.wasm'))
+          assert.deepStrictEqual(rest, {
+            name: 'foobar Message',
+            noSave: false,
+            deepHash: undefined,
+            cron: undefined,
+            ordinate: '1',
+            isAssignment: false,
+            processId: 'foobar-process'
+          })
+
+          return AoLoader(readFileSync('./test/processes/happy/process.wasm'), mOptions)
             .then((wasmModule) => wasmModule(Memory, message, AoGlobal))
         },
         logger
       })
 
-      const res = await (await evaluator({ moduleId, gas: 9_000_000_000_000, memLimit: 8_000_000_000_000 }))(args)
+      const res = await (await evaluator({ moduleId, moduleOptions }))(args)
 
       assert.ok(res.Memory)
       assert.ok(res.Output)

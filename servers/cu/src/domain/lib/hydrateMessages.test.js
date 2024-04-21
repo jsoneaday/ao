@@ -1,9 +1,9 @@
 /* eslint-disable no-throw-literal */
-import { describe, test } from 'node:test'
+import { describe, test, before } from 'node:test'
 import assert from 'node:assert'
 
 import { createLogger } from '../logger.js'
-import { bytesToBase64, maybeAoLoadWith, maybeMessageIdWith } from './hydrateMessages.js'
+import { bytesToBase64, maybeAoAssignmentWith, maybeMessageIdWith } from './hydrateMessages.js'
 
 const logger = createLogger('ao-cu:readState')
 
@@ -91,65 +91,79 @@ describe('hydrateMessages', () => {
     })
   })
 
-  describe('maybeAoLoadWith', () => {
-    test('should build the ao-load message', async () => {
-      const notAoLoad = {
-        message: {
-          Id: 'message-tx-345',
-          Signature: 'sig-345',
-          Owner: 'owner-345',
-          Tags: [
-            { name: 'Data-Protocol', value: 'ao' },
-            { name: 'Type', value: 'Message' },
-            { name: 'function', value: 'notify' }
-          ],
-          Data: 'foobar'
-        }
+  describe('maybeAoAssignmentWith', () => {
+    const notAssignment = {
+      message: {
+        Id: 'message-tx-345',
+        Signature: 'sig-345',
+        Owner: 'owner-345',
+        Tags: [
+          { name: 'Data-Protocol', value: 'ao' },
+          { name: 'Type', value: 'Message' },
+          { name: 'function', value: 'notify' }
+        ],
+        Data: 'foobar'
       }
-      const cronMessage = {
-        message: {
-          Id: 'message-tx-345',
-          Signature: 'sig-345',
-          Owner: 'owner-345',
-          Tags: [
-            { name: 'Data-Protocol', value: 'ao' },
-            { name: 'Type', value: 'Message' },
-            { name: 'function', value: 'notify' }
-          ],
-          Data: 'foobar',
-          Cron: true
-        }
-      }
-      const aoLoad = {
-        message: {
-          Id: 'message-tx-456',
-          Signature: 'sig-456',
-          Owner: 'owner-456',
-          Tags: [
-            { name: 'Data-Protocol', value: 'ao' },
-            { name: 'Type', value: 'Message' },
-            { name: 'function', value: 'notify' },
-            { name: 'Load', value: 'message-tx-123' }
-          ],
-          Data: 'overwritten'
-        }
-      }
+    }
+    const aoAssignment = {
+      ordinate: 13,
+      isAssignment: true,
+      message: {
+        Id: 'message-tx-123',
+        Epoch: 0,
+        Nonce: 23,
+        'Block-Height': 123,
+        Timestamp: 123
+      },
+      block: { height: 99 }
+    }
 
-      async function * messageStream () {
-        yield notAoLoad
-        yield aoLoad
-        yield cronMessage
-      }
+    const aoAssignmentWithExclude = {
+      ordinate: 13,
+      isAssignment: true,
+      exclude: ['Tags', 'Anchor', 'Signature'],
+      message: {
+        Id: 'message-tx-789',
+        Epoch: 0,
+        Nonce: 23,
+        'Block-Height': 789,
+        Timestamp: 789
+      },
+      block: { height: 99 }
+    }
 
-      const maybeAoLoad = maybeAoLoadWith({
-        loadTransactionData: async (id) => {
-          assert.equal(id, 'message-tx-123')
-          return new Response('Hello World 🤖❌⚡️')
-        },
-        loadTransactionMeta: async (id) => {
-          assert.equal(id, 'message-tx-123')
+    const aoAssignmentWithExcludeData = {
+      ordinate: 13,
+      isAssignment: true,
+      exclude: ['Tags', 'Data'],
+      message: {
+        Id: 'message-tx-989',
+        Epoch: 0,
+        Nonce: 23,
+        'Block-Height': 989,
+        Timestamp: 989
+      },
+      block: { height: 99 }
+    }
+
+    async function * messageStream () {
+      yield notAssignment
+      yield aoAssignment
+      yield notAssignment
+      yield aoAssignmentWithExclude
+      yield aoAssignmentWithExcludeData
+    }
+
+    const deps = {
+      loadTransactionData: async (id) => {
+        if (id === aoAssignment.message.Id) return new Response('Hello World 🤖❌⚡️')
+        if (id === aoAssignmentWithExclude.message.Id) return new Response('Yay Data')
+        assert.fail(`should not call loadTransactionData for id ${id}`)
+      },
+      loadTransactionMeta: async (id, options) => {
+        if (id === aoAssignment.message.Id) {
           return {
-            id: 'message-tx-123',
+            id,
             signature: 'sig-123',
             anchor: 'anchor-123',
             owner: {
@@ -159,35 +173,108 @@ describe('hydrateMessages', () => {
               { name: 'foo', value: 'bar' }
             ]
           }
-        },
-        logger
-      })
+        }
 
-      const hydrated = maybeAoLoad(messageStream())
+        if (id === aoAssignmentWithExclude.message.Id) {
+          assert.deepStrictEqual(options, {
+            skipTags: true,
+            skipAnchor: true,
+            skipSignature: true
+          })
 
-      const messages = []
-      for await (const message of hydrated) messages.push(message)
-
-      assert.equal(messages.length, 3)
-      const [one, two, three] = messages
-      assert.deepStrictEqual(one, notAoLoad)
-      assert.deepStrictEqual(three, cronMessage)
-
-      assert.deepStrictEqual(two, {
-        ...aoLoad,
-        message: {
-          ...aoLoad.message,
-          // original data overwritten with constructed data item
-          Data: {
-            Id: 'message-tx-123',
-            Signature: 'sig-123',
-            Owner: 'owner-123',
-            Tags: [
-              { name: 'foo', value: 'bar' }
-            ],
-            Anchor: 'anchor-123',
-            Data: bytesToBase64(await new Response('Hello World 🤖❌⚡️').arrayBuffer())
+          return {
+            id,
+            owner: {
+              address: 'owner-123'
+            }
           }
+        }
+
+        if (id === aoAssignmentWithExcludeData.message.Id) {
+          assert.ok(options.skipTags)
+          assert.ok(!options.skipAnchor)
+          assert.ok(!options.skipSignature)
+
+          return {
+            id,
+            signature: 'sig-123',
+            anchor: 'anchor-123',
+            owner: {
+              address: 'owner-123'
+            }
+          }
+        }
+
+        assert.fail(`should not call loadTransactionMeta for id ${id}`)
+      }
+    }
+
+    const maybeAoAssignment = maybeAoAssignmentWith(deps)
+
+    const hydrated = maybeAoAssignment(messageStream())
+    const messages = []
+    before(async () => {
+      for await (const message of hydrated) messages.push(message)
+    })
+
+    test('should emit the messages in same order', () => {
+      const [one, two, three] = messages
+      assert.deepStrictEqual(one, notAssignment)
+      assert.equal(two.ordinate, aoAssignment.ordinate)
+      assert.deepStrictEqual(three, notAssignment)
+    })
+
+    test('should hydrate the message from on chain', async () => {
+      const [, two] = messages
+      assert.deepStrictEqual(two, {
+        ...aoAssignment,
+        message: {
+          ...aoAssignment.message,
+          // original fields overwritten with constructed data item
+          Signature: 'sig-123',
+          Anchor: 'anchor-123',
+          Tags: [
+            { name: 'foo', value: 'bar' }
+          ],
+          Owner: 'owner-123',
+          From: 'owner-123',
+          Data: 'Hello World 🤖❌⚡️'
+        }
+      })
+    })
+
+    test('should not load meta fields if excluded', () => {
+      const [,,, four] = messages
+
+      assert.deepStrictEqual(four, {
+        ...aoAssignmentWithExclude,
+        message: {
+          ...aoAssignmentWithExclude.message,
+          Signature: undefined,
+          Anchor: undefined,
+          Tags: [],
+          Owner: 'owner-123',
+          From: 'owner-123',
+          Data: 'Yay Data'
+        }
+      })
+    })
+
+    test('should not load Data if excluded', () => {
+      const [,,,, five] = messages
+
+      assert.deepStrictEqual(five, {
+        ...aoAssignmentWithExcludeData,
+        message: {
+          ...aoAssignmentWithExcludeData.message,
+          Signature: 'sig-123',
+          Anchor: 'anchor-123',
+          // Tags excluded
+          Tags: [],
+          Owner: 'owner-123',
+          From: 'owner-123',
+          // Data omitted
+          Data: undefined
         }
       })
     })

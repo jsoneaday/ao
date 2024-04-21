@@ -46,6 +46,7 @@ export function deployMessageWith ({ fetch, MU_URL, logger: _logger }) {
                   'Content-Type': 'application/octet-stream',
                   Accept: 'application/json'
                 },
+                redirect: 'follow',
                 body: signedDataItem.raw
               }
             )
@@ -102,6 +103,7 @@ export function deployProcessWith ({ fetch, MU_URL, logger: _logger }) {
                   'Content-Type': 'application/octet-stream',
                   Accept: 'application/json'
                 },
+                redirect: 'follow',
                 body: signedDataItem.raw
               }
             )
@@ -160,6 +162,7 @@ export function deployMonitorWith ({ fetch, MU_URL, logger: _logger }) {
                 'Content-Type': 'application/octet-stream',
                 Accept: 'application/json'
               },
+              redirect: 'follow',
               body: signedDataItem.raw
             }
           )
@@ -220,6 +223,7 @@ export function deployUnmonitorWith ({ fetch, MU_URL, logger: _logger }) {
                 'Content-Type': 'application/octet-stream',
                 Accept: 'application/json'
               },
+              redirect: 'follow',
               body: signedDataItem.raw
             }
           )
@@ -242,4 +246,57 @@ export function deployUnmonitorWith ({ fetch, MU_URL, logger: _logger }) {
         .map(res => ({ res, messageId: signedDataItem.id }))
     )
     .toPromise()
+}
+
+/**
+ * @typedef Env6
+ * @property {fetch} fetch
+ * @property {string} MU_URL
+ *
+ *
+ * @typedef WriteAssignArgs
+ * @property {string} process
+ * @property {string} message
+ * @property {string[]} [exclude]
+ * @property {boolean} [baseLayer]
+ *
+ * @callback WriteAssign
+ * @param {WriteAssignArgs} args
+ * @returns {Promise<Record<string, any>}
+ *
+ * @param {Env6} env
+ * @returns {WriteAssign}
+ */
+export function deployAssignWith ({ fetch, MU_URL, logger: _logger }) {
+  const logger = _logger.child('deployAssign')
+
+  return (args) => {
+    return of(args)
+      .chain(fromPromise(async ({ process, message, baseLayer, exclude }) =>
+        fetch(
+            `${MU_URL}?process-id=${process}&assign=${message}${baseLayer ? '&base-layer' : ''}${exclude ? '&exclude=' + exclude.join(',') : ''}`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/octet-stream',
+                Accept: 'application/json'
+              }
+            }
+        )
+      )).bichain(
+        err => Rejected(new Error(`Error while communicating with MU: ${JSON.stringify(err)}`)),
+        fromPromise(
+          async res => {
+            if (res.ok) return res.json()
+            throw new Error(`${res.status}: ${await res.text()}`)
+          }
+        )
+      )
+      .bimap(
+        logger.tap('Error encountered when writing assignment via MU'),
+        logger.tap('Successfully wrote assignment via MU')
+      )
+      .map(res => ({ res, assignmentId: res.id }))
+      .toPromise()
+  }
 }
