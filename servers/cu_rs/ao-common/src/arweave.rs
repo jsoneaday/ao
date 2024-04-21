@@ -217,7 +217,7 @@ struct ProcessIds {
 mod tests {
     use std::sync::Arc;
     use async_trait::async_trait;
-    use bundlr_sdk::tags::Tag;
+    use serde_json::to_vec;
     use super::*;
     use crate::{domain::{clients::uploader::UploaderClient, core::{builder::Builder, bytes::DataItem, dal::{Uploader, Gateway, Log, NetworkInfo, ScheduleProvider, Signer, TxStatus}}}, test_utils::{get_uploader_url, get_wallet_file}};
 
@@ -362,7 +362,7 @@ mod tests {
         // println!("message {:?}", message.binary);
         let uploader = UploaderClient::new(&get_uploader_url(), logger).unwrap();
         println!("items {:?}", message.bundle.items);
-        let result = uploader.upload(message.bundle.items[0].as_bytes().unwrap()).await;
+        let result = uploader.upload(message.binary.to_vec()).await;
     }
 
     // #[tokio::test]

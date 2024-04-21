@@ -1,6 +1,7 @@
 use std::clone::Clone;
 use bytes::{BufMut, Bytes};
 use bundlr_sdk::{error::BundlrError, tags::{AvroDecode, Tag, AvroEncode}};
+use serde::Serialize;
 use sha2::{Digest, Sha256, Sha384};
 use base64_url;
 use ring::rand::SecureRandom;
@@ -22,7 +23,7 @@ impl From<&str> for ByteErrorType {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct DataBundle {
     pub items: Vec<DataItem>,
     pub tags: Vec<Tag>
@@ -78,13 +79,13 @@ fn long_to_32_byte_array(value: u64) -> Result<Vec<u8>, ByteErrorType> {
     long_to_n_byte_array(32, value)
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 enum Data {
     None,
     Bytes(Vec<u8>)
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct DataItem {
     signature_type: SignerMap,
     pub signature: Vec<u8>,
@@ -102,7 +103,7 @@ pub struct Config {
     pub sig_name: String
 }
 
-#[derive(PartialEq, Clone, Debug)]
+#[derive(PartialEq, Clone, Debug, Serialize)]
 pub enum SignerMap {
     None = -1,
     Arweave = 1,

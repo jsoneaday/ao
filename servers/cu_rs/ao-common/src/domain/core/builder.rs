@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use bundlr_sdk::tags::Tag;
+use serde::Serialize;
 use super::bytes::{ByteErrorType, DataBundle, DataItem};
 use super::dal::{Gateway, Log, ScheduleProvider, Signer, TxStatus};
 use super::json::Process;
@@ -10,7 +11,7 @@ pub struct Builder<'a> {
     logger: &'a Arc<dyn Log>
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct BuildResult {
     pub binary: Vec<u8>,
     pub bundle: DataBundle
