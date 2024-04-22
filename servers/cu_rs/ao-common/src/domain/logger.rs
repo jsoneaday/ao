@@ -1,11 +1,9 @@
 use std::sync::Arc;
-
 use env_logger::Env;
 use log::{error, info};
-
 use crate::domain::core::dal::Log;
 
-pub struct SuLog;
+pub struct UnitLog;
 
 /*
 Logging instance, using an instance of this
@@ -13,14 +11,14 @@ instead of the env_logger macros throughout
 the code
 */
 
-impl SuLog {
+impl UnitLog {
     pub fn init() -> Arc<dyn Log> {
         env_logger::init_from_env(Env::default().default_filter_or("info"));
-        Arc::new(SuLog {})
+        Arc::new(UnitLog {})
     }
 }
 
-impl Log for SuLog {
+impl Log for UnitLog {
     fn log(&self, message: String) {
         info!("{}", message);
     }

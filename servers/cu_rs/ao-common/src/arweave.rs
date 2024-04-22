@@ -217,10 +217,12 @@ struct ProcessIds {
 mod tests {
     use std::sync::Arc;
     use async_trait::async_trait;
-    use serde_json::to_vec;
     use super::*;
-    use crate::{domain::{clients::uploader::UploaderClient, core::{builder::Builder, bytes::DataItem, dal::{Uploader, Gateway, Log, NetworkInfo, ScheduleProvider, Signer, TxStatus}}}, test_utils::{get_uploader_url, get_wallet_file}};
-
+    use crate::{
+        domain::{uploader::UploaderClient, builder::Builder, bytes::DataItem, dal::{Uploader, Gateway, Log, NetworkInfo, ScheduleProvider, Signer, TxStatus}}, 
+        test_utils::{get_uploader_url, get_wallet_file}
+    };
+    
     // #[tokio::test]
     // async fn test_new() {
     //     let arweave = InternalArweave::new(get_wallet_file(), get_uploader_url());

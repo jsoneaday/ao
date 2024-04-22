@@ -3,10 +3,17 @@ pub mod config;
 pub mod app_state;
 pub mod domain {
     pub mod index;
+    pub mod config;
     pub mod utils {
         pub mod error;
     }
-    pub mod client{}
+    pub mod clients {
+        pub mod gateway;
+        pub mod wallet;
+    }
+    pub mod core {
+        pub mod flows;
+    }
     // pub mod model;
     pub mod validation {
         pub mod domain_config_schema;
