@@ -1,5 +1,6 @@
 use arweave_rs::Arweave;
 use arweave_rs::ArweaveBuilder;
+use bundlr_sdk::tags::Tag;
 use rand::Rng;
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{Client, Error, Response, Url};
@@ -15,8 +16,6 @@ use crate::domain::uploader::IrysResponse;
 
 pub struct InternalArweave {
     internal_arweave: Arweave,
-    uploader_url: String,
-    wallet_path: String,
     client: Client
 }
 
@@ -24,8 +23,6 @@ impl InternalArweave {
     pub fn new(keypair_path: &str, uploader_url: &str) -> Self {
         InternalArweave {
             internal_arweave: InternalArweave::create_wallet_client(keypair_path, uploader_url),
-            uploader_url: uploader_url.to_string(),
-            wallet_path: keypair_path.to_string(),
             client: Client::new()
         }
     }
@@ -59,21 +56,19 @@ impl InternalArweave {
     }
 
     /// A DataItem allows for uploading of a bundled item without sender themselves having to pay for it
-    // pub fn build_sign_dataitem(&self, data: Vec<u8>, anchor: Option<[u8;32]>, tags: Vec<Tag>) -> Result<DataItem, QueryGatewayErrors> {
-    //     let signer = ArweaveSigner::new(jwk, &self.wallet_path);
-        
-    //     match create_data(ar_bundles::ar_data_create::Data::BinaryData(data), &signer, Some(&DataItemCreateOptions {
-    //         target: None,
-    //         anchor,
-    //         tags: Some(tags)
-    //     })) {
-    //         Ok(mut di) => {
-    //             di.sign(&signer);
-    //             Ok(di)
-    //         },
-    //         Err(e) => Err(QueryGatewayErrors::BundlerFailure(e))
-    //     }
-    // }
+    /// This function signs the data item
+    pub fn build_sign_dataitem(&self, data: Vec<u8>, tags: Vec<Tag>) -> Result<DataItem, QueryGatewayErrors> {
+        let mut data_item = DataItem::new(
+            vec![], 
+            data, 
+            tags, 
+            base64_url::decode(&self.internal_arweave.get_pub_key().unwrap()).unwrap()
+        ).unwrap();
+
+        data_item.signature = self.internal_arweave.sign(&data_item.get_message().unwrap().to_vec()).unwrap();
+
+        Ok(data_item)
+    }
 
     /**
      * @typedef Env1
@@ -178,10 +173,10 @@ impl InternalArweave {
         }
     }
 
-    pub async fn upload_data_item(&self, uploader_url: &str, data_item: &DataItem) -> Result<IrysResponse, Error> {
+    pub async fn upload_data_item(&self, uploader_url: &str, data_item: DataItem) -> Result<IrysResponse, Error> {
         let mut headers = HeaderMap::new();
         headers.append("Content-Type", HeaderValue::from_str("application/octet-stream").unwrap());
-        // headers.append("Accept", HeaderValue::from_str("application/json").unwrap());
+        
         let result = self.client
             .post(format!("{}/tx/arweave", uploader_url))
             .headers(headers)
@@ -216,60 +211,57 @@ struct ProcessIds {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::sync::Arc;    
+mod tests {   
     use bundlr_sdk::tags::Tag;
     use super::*;
     use crate::{
-        domain::{bytes::DataItem, dal::Signer, signer::ArweaveSigner}, 
+        domain::bytes::DataItem, 
         test_utils::{get_uploader_url, get_wallet_file}
     };
     
-    // #[tokio::test]
-    // async fn test_new() {
-    //     let arweave = InternalArweave::new(get_wallet_file(), get_uploader_url());
-    //     assert!(!arweave.address().unwrap().is_empty());
-    // }
+    #[tokio::test]
+    async fn test_new() {
+        let arweave = InternalArweave::new(get_wallet_file(), get_uploader_url());
+        assert!(!arweave.address().unwrap().is_empty());
+    }
 
-    // #[tokio::test]
-    // async fn test_create_wallet_client() {
-    //     let wallet = InternalArweave::create_wallet_client(get_wallet_file(), get_uploader_url());
-    //     assert!(!wallet.get_wallet_address().unwrap().is_empty());
-    // }
+    #[tokio::test]
+    async fn test_create_wallet_client() {
+        let wallet = InternalArweave::create_wallet_client(get_wallet_file(), get_uploader_url());
+        assert!(!wallet.get_wallet_address().unwrap().is_empty());
+    }
 
-    // #[tokio::test]
-    // async fn test_address_with() {
-    //     let arweave = InternalArweave::new(get_wallet_file(), get_uploader_url());
-    //     assert!(!arweave.address().unwrap().is_empty());
-    // }
+    #[tokio::test]
+    async fn test_address_with() {
+        let arweave = InternalArweave::new(get_wallet_file(), get_uploader_url());
+        assert!(!arweave.address().unwrap().is_empty());
+    }
 
-    // #[tokio::test]
-    // async fn test_build_sign_dataitem_with() {        
-    //     let arweave = InternalArweave::new(get_wallet_file(), get_uploader_url());
-    //     let mut path = PathBuf::new();
-    //     path.push("test.png");
+    #[tokio::test]
+    async fn test_build_sign_dataitem_with() {        
+        let arweave = InternalArweave::new(get_wallet_file(), get_uploader_url());
+        let mut path = PathBuf::new();
+        path.push("test.png");
         
-    //     let data = std::fs::read(path).unwrap();
-    //     let data_item = arweave.build_sign_dataitem(
-    //         data.clone(), 
-    //         None,
-    //         vec![Tag { 
-    //             name: Some("test".to_string()), 
-    //             value: Some("test value".to_string())
-    //         }]
-    //     );
-    //     // println!("error {:?}", data_item.ok());
-    //     assert!(data_item.is_ok());
-    // }
+        let data = std::fs::read(path).unwrap();
+        let data_item = arweave.build_sign_dataitem(data, vec![Tag { 
+            name: "hello".to_string(), 
+            value: "world".to_string()
+        }]).unwrap();
+
+        // try an upload to make sure its a valid data item
+        let result = arweave.upload_data_item(get_uploader_url(), data_item).await;
+        assert!(result.is_ok());
+    }
 
     #[tokio::test]
     async fn test_upload_dataitem() {
         let arweave = InternalArweave::new(get_wallet_file(), get_uploader_url());
-
+        
         let mut path = PathBuf::new();
         path.push("test.png");
           
-        let signer = Arc::new(ArweaveSigner::new(get_wallet_file()).expect("Invalid su wallet path"));
+        // let signer = Arc::new(ArweaveSigner::new(get_wallet_file()).expect("Invalid su wallet path"));
         let data = std::fs::read(path).unwrap();
         let mut data_item = DataItem::new(vec![], data, vec![
             Tag { 
@@ -280,10 +272,11 @@ mod tests {
                 name: "Bundle-Version".to_string(), 
                 value: "2.0.0".to_string() 
             }
-        ], signer.get_public_key()).unwrap();
-        data_item.signature = signer.sign_tx(data_item.get_message().unwrap().to_vec()).await.unwrap();
+        ], base64_url::decode(&arweave.internal_arweave.get_pub_key().unwrap()).unwrap()).unwrap();
+        // data_item.signature = signer.sign_tx(data_item.get_message().unwrap().to_vec()).await.unwrap();
+        data_item.signature = arweave.internal_arweave.sign(&data_item.get_message().unwrap().to_vec()).unwrap();
 
-        let result = arweave.upload_data_item(get_uploader_url(), &data_item).await;
+        let result = arweave.upload_data_item(get_uploader_url(), data_item).await;
         assert!(result.is_ok());
     }
 }
