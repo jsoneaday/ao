@@ -1,6 +1,6 @@
 use super::validation::domain_config_schema::DomainConfigSchema;
 use log::info;
-use ao_common::arweave::InternalArweave;
+use crate::domain::client::arweave::InternalArweave;
 
 #[allow(unused)]
 pub struct DomainIndex {

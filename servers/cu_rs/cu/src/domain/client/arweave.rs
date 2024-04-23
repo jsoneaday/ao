@@ -8,11 +8,11 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 #[allow(unused)]
 use log::{error, info};
-use crate::domain::bytes::DataItem;
-use crate::errors::QueryGatewayErrors;
-use crate::network::utils::get_content_type_headers;
-use crate::models::gql_models::{Node, TransactionConnectionSchema};
-use crate::domain::uploader::IrysResponse;
+use ao_common::domain::bytes::DataItem;
+use ao_common::errors::QueryGatewayErrors;
+use ao_common::models::gql_models::{Node, TransactionConnectionSchema, GraphqlInput};
+use ao_common::network::utils::get_content_type_headers;
+use ao_common::domain::uploader::IrysResponse;
 
 pub struct InternalArweave {
     internal_arweave: Arweave,
@@ -147,7 +147,7 @@ impl InternalArweave {
         let result = self.client.post(format!("{}{}", gateway_url, "/graphql"))
             .headers(get_content_type_headers())
             .body(
-                serde_json::to_string(&GraphqlQuery {
+                serde_json::to_string(&GraphqlInput {
                     query: query.to_string(),
                     variables
                 }).unwrap()
@@ -197,12 +197,6 @@ impl InternalArweave {
     }
 }
 
-#[derive(Serialize)]
-struct GraphqlQuery<T> {
-    query: String,
-    variables: T
-}
-
 /// variables type
 #[derive(Serialize)]
 struct ProcessIds {
@@ -214,10 +208,9 @@ struct ProcessIds {
 mod tests {   
     use bundlr_sdk::tags::Tag;
     use super::*;
-    use crate::{
-        domain::bytes::DataItem, 
-        test_utils::{get_uploader_url, get_wallet_file}
-    };
+    use ao_common::test_utils::{get_uploader_url, get_wallet_file};
+
+    const TEST_IMAGE_FILE: &str = "../test_utils/test.png";
     
     #[tokio::test]
     async fn test_new() {
@@ -241,7 +234,7 @@ mod tests {
     async fn test_build_sign_dataitem_with() {        
         let arweave = InternalArweave::new(get_wallet_file(), get_uploader_url());
         let mut path = PathBuf::new();
-        path.push("test.png");
+        path.push(TEST_IMAGE_FILE);
         
         let data = std::fs::read(path).unwrap();
         let data_item = arweave.build_sign_dataitem(data, vec![Tag { 
@@ -259,7 +252,7 @@ mod tests {
         let arweave = InternalArweave::new(get_wallet_file(), get_uploader_url());
         
         let mut path = PathBuf::new();
-        path.push("test.png");
+        path.push(TEST_IMAGE_FILE);
           
         // let signer = Arc::new(ArweaveSigner::new(get_wallet_file()).expect("Invalid su wallet path"));
         let data = std::fs::read(path).unwrap();

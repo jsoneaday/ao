@@ -21,7 +21,7 @@ const DEFAULT_UPLOADER_URL: &str = "https://up.arweave.net";
  *
  * @param {ConnectParams} [params]
  */
-pub fn connect(cache_size: u64, wallet_path: &str, gateway_url: Option<&str>, uploader_url: Option<&str>, follow_redirects: Option<bool>) -> ConnectReturn {
+pub fn connect(cache_size: u64, gateway_url: Option<&str>, uploader_url: Option<&str>, follow_redirects: Option<bool>) -> ConnectReturn {
     let _gateway_url = if let Some(gateway_url) = gateway_url { 
         gateway_url
     } else { 
@@ -37,11 +37,11 @@ pub fn connect(cache_size: u64, wallet_path: &str, gateway_url: Option<&str>, up
     let check_for_redirect = CheckForRedirect;
     let cache = LocalLruCache::new(cache_size);
 
-    let locate = Locate::new(Gateway::new(wallet_path, _gateway_url, _uploader_url), cache.clone(), _follow_redirects, check_for_redirect);
+    let locate = Locate::new(Gateway::new(_gateway_url), cache.clone(), _follow_redirects, check_for_redirect);
 
-    let validate = Validate::new(Gateway::new(wallet_path, _gateway_url, _uploader_url), cache.clone());
+    let validate = Validate::new(Gateway::new(_gateway_url), cache.clone());
     
-    let raw = Raw::new(Gateway::new(wallet_path, _gateway_url, _uploader_url), cache.clone());
+    let raw = Raw::new(Gateway::new(_gateway_url), cache.clone());
 
     ConnectReturn {
         locate,

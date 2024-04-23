@@ -6,7 +6,6 @@ pub mod models {
 pub mod network {
     pub mod utils;
 }
-pub mod arweave;
 pub mod errors;
 pub mod test_utils;
 pub mod domain;

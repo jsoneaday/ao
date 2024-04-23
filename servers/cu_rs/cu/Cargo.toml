@@ -33,7 +33,7 @@ log = "0.4.21"
 mockall = "0.12.1"
 multipart = "0.18.0"
 nix = "0.28.0"
-reqwest = { version = "0.11.2", features = ["json", "multipart"] }
+reqwest = { version = "0.12.4", features = ["json", "multipart"] }
 serde = { version = "1.0.197", features = ["derive"] }
 serde_json = "1.0.114"
 serde_repr = "0.1.18"
@@ -54,3 +54,5 @@ sha2 = "0.10.8"
 base64-url = "2.0.2"
 jsonwebkey = "0.3.5"
 rsa = "0.9.6"
+bundlr-sdk = "0.5.0"
+rand = "0.8.5"

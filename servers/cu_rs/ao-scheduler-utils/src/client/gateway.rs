@@ -1,18 +1,71 @@
 use ao_common::errors::QueryGatewayErrors;
-use ao_common::models::gql_models::{Node, TransactionConnectionSchema};
+use ao_common::models::gql_models::{GraphqlInput, Node, TransactionConnectionSchema};
 use ao_common::models::shared_models::Tag;
+use ao_common::network::utils::get_content_type_headers;
 use async_trait::async_trait;
+use reqwest::Client;
 use serde::Serialize;
-use ao_common::arweave::InternalArweave;
 use crate::err::SchedulerErrors;
+use log::error;
 
 const URL_TAG: &str = "Url";
 const TTL_TAG: &str = "Time-To-Live";
 const SCHEDULER_TAG: &str = "Scheduler";
 
 pub struct Gateway {
-    arweave: InternalArweave,
+    client: Client,
     gateway_url: String
+}
+
+impl Gateway {
+    /// If you need readonly querying, pass an empty path
+    pub fn new(gateway_url: &str) -> Self {
+        Gateway { client: Client::new(), gateway_url: gateway_url.to_string() }
+    }
+
+    fn find_tag_value(name: &str, tags: &Vec<Tag>) -> String {
+        match tags.iter().find(|tag| tag.name == name) {
+            Some(found_tag) => found_tag.value.to_string(),
+            None => "".to_string()
+        }
+    }
+    
+    fn find_transaction_tags<'a>(err_msg: &'a str, transaction_node: &'a Option<Node>) -> Result<Vec<Tag>, SchedulerErrors> {
+        if let Some(node) = transaction_node {
+            return Ok(if node.tags.is_none() { vec![] } else { node.tags.as_ref().unwrap().clone() });
+        }
+        Err(SchedulerErrors::new_transaction_not_found(err_msg.to_string()))
+    }
+    
+    async fn gateway_with<'a, T: Serialize, U: for<'de> serde::Deserialize<'de>>(&self, query: &'a str, variables: T) -> Result<U, QueryGatewayErrors> {
+        let result = self.client.post(format!("{}{}", self.gateway_url, "/graphql"))
+            .headers(get_content_type_headers())
+            .body(
+                serde_json::to_string(&GraphqlInput {
+                    query: query.to_string(),
+                    variables
+                }).unwrap()
+            )
+            .send()
+            .await;
+
+        match result {
+            Ok(res) => {
+                let body_str = res.text().await.unwrap();
+                match serde_json::from_str::<U>(&body_str) {
+                    Ok(res) => Ok(res),
+                    Err(e) => {                        
+                        error!("Serialization error {:?}", e);
+                        Err(QueryGatewayErrors::Serialization(Some(Box::new(e))))
+                    }
+                }
+            },
+            Err(e) => {
+                error!("Error Encountered when querying gateway");
+                Err(QueryGatewayErrors::Network(Some(Box::new(e))))
+            }
+        }
+    }    
 }
 
 #[async_trait]
@@ -41,7 +94,6 @@ impl GatewayMaker for Gateway {
         "#;
 
         let result = self.gateway_with::<TransactionIds, TransactionConnectionSchema>(
-            self.gateway_url.as_str(), 
             GET_TRANSACTIONS_QUERY, 
             TransactionIds { transaction_ids: vec![process_tx_id] }
         ).await;
@@ -95,7 +147,7 @@ impl GatewayMaker for Gateway {
             }
         "#;
 
-        let result = self.gateway_with::<WalletAddress, TransactionConnectionSchema>(self.gateway_url.as_str(), GET_SCHEDULER_LOCATION, WalletAddress { owner: scheduler_wallet_address }).await;        
+        let result = self.gateway_with::<WalletAddress, TransactionConnectionSchema>(GET_SCHEDULER_LOCATION, WalletAddress { owner: scheduler_wallet_address }).await;        
         match result {
             Ok(tx) => {
                 let node = if tx.data.transactions.edges.is_empty() { None } else { Some(tx.data.transactions.edges[0].node.clone()) };
@@ -134,35 +186,7 @@ impl GatewayMaker for Gateway {
     }
 }
 
-impl Gateway {
-    /// If you need readonly querying, pass an empty path
-    pub fn new(keypair_path: &str, gateway_url: &str, uploader_url: &str) -> Self {
-        Gateway { arweave: InternalArweave::new(keypair_path, uploader_url), gateway_url: gateway_url.to_string() }
-    }
 
-    fn find_tag_value(name: &str, tags: &Vec<Tag>) -> String {
-        match tags.iter().find(|tag| tag.name == name) {
-            Some(found_tag) => found_tag.value.to_string(),
-            None => "".to_string()
-        }
-    }
-    
-    fn find_transaction_tags<'a>(err_msg: &'a str, transaction_node: &'a Option<Node>) -> Result<Vec<Tag>, SchedulerErrors> {
-        if let Some(node) = transaction_node {
-            return Ok(if node.tags.is_none() { vec![] } else { node.tags.as_ref().unwrap().clone() });
-        }
-        Err(SchedulerErrors::new_transaction_not_found(err_msg.to_string()))
-    }
-    
-    async fn gateway_with<'a, T: Serialize, U: for<'de> serde::Deserialize<'de>>(&self, gateway_url: &'a str, query: &'a str, variables: T) -> Result<U, QueryGatewayErrors> {
-        let result = self.arweave.query_gateway::<T, U>(gateway_url, query, variables).await;
-        
-        match result {
-            Ok(res) => Ok(res),
-            Err(e) => Err(e)
-        }
-    }    
-}
 
 #[derive(Serialize)]
 struct WalletAddress<'a> {
@@ -189,18 +213,8 @@ mod tests {
     use super::*;
 
     const GATEWAY_URL: &str = "https://arweave.net";
-    const UPLOADER_URL: &str = "https://up.arweave.net";
     const SCHEDULER_WALLET_ADDRESS: &str = "_GQ33BkPtZrqxA84vM8Zk-N2aO0toNNu_C-l-rawrBA";
     static INIT: Once = Once::new();
-
-    static WALLET_FILE: once_cell::sync::OnceCell<String> = once_cell::sync::OnceCell::new();
-    fn get_wallet_file() -> &'static String {
-        WALLET_FILE.get_or_init(|| {
-            dotenv::dotenv().ok();
-
-            std::env::var("WALLET_FILE").unwrap()
-        })
-    }
 
     fn init() {
         INIT.call_once(|| env_logger::init_from_env(env_logger::Env::new().default_filter_or("info")));
@@ -260,7 +274,7 @@ mod tests {
     async fn test_load_scheduler_with() {
         init();
 
-        let gateway = Gateway::new(get_wallet_file(), GATEWAY_URL, UPLOADER_URL);
+        let gateway = Gateway::new(GATEWAY_URL);
         
         let result = gateway.load_scheduler(SCHEDULER_WALLET_ADDRESS).await;
         match result {
@@ -273,7 +287,7 @@ mod tests {
     async fn test_load_process_scheduler_with() {
         init();
 
-        let gateway = Gateway::new(get_wallet_file(), GATEWAY_URL, UPLOADER_URL);
+        let gateway = Gateway::new(GATEWAY_URL);
         
         let result = gateway.load_process_scheduler("KHruEP5dOP_MgNHava2kEPleihEc915GlRRr3rQ5Jz4").await;
         match result {

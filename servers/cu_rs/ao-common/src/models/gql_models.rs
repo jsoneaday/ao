@@ -4,8 +4,8 @@ use super::shared_models::{Owner, Tag};
 
 #[derive(Serialize)]
 pub struct GraphqlInput<T> {
-    query: String,
-    variables: T
+    pub query: String,
+    pub variables: T
 }
 
 #[derive(Deserialize)]

@@ -450,7 +450,7 @@ dependencies = [
  "log 0.4.21",
  "once_cell",
  "rand 0.8.5",
- "reqwest 0.12.3",
+ "reqwest 0.12.4",
  "ring 0.17.8",
  "rsa 0.9.6",
  "serde",
@@ -474,7 +474,7 @@ dependencies = [
  "mockito",
  "moka",
  "once_cell",
- "reqwest 0.12.3",
+ "reqwest 0.12.4",
  "serde",
  "serde_json",
  "tokio",
@@ -1372,6 +1372,7 @@ dependencies = [
  "async-trait",
  "base64-url",
  "bevy_reflect",
+ "bundlr-sdk",
  "chrono",
  "derive_more",
  "dotenv",
@@ -1389,8 +1390,9 @@ dependencies = [
  "multipart",
  "nix",
  "once_cell",
+ "rand 0.8.5",
  "regex",
- "reqwest 0.11.27",
+ "reqwest 0.12.4",
  "rsa 0.9.6",
  "serde",
  "serde-wasm-bindgen",
@@ -2384,19 +2386,6 @@ dependencies = [
  "rustls",
  "tokio",
  "tokio-rustls",
-]
-
-[[package]]
-name = "hyper-tls"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d6183ddfa99b85da61a140bea0efc93fdf56ceaa041b37d553518030827f9905"
-dependencies = [
- "bytes",
- "hyper 0.14.28",
- "native-tls",
- "tokio",
- "tokio-native-tls",
 ]
 
 [[package]]
@@ -4197,13 +4186,10 @@ dependencies = [
  "http-body 0.4.6",
  "hyper 0.14.28",
  "hyper-rustls",
- "hyper-tls 0.5.0",
  "ipnet",
  "js-sys",
  "log 0.4.21",
  "mime 0.3.17",
- "mime_guess 2.0.4",
- "native-tls",
  "once_cell",
  "percent-encoding 2.3.1",
  "pin-project-lite",
@@ -4215,7 +4201,6 @@ dependencies = [
  "sync_wrapper",
  "system-configuration",
  "tokio",
- "tokio-native-tls",
  "tokio-rustls",
  "tower-service",
  "url 2.5.0",
@@ -4228,9 +4213,9 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.12.3"
+version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3e6cc1e89e689536eb5aeede61520e874df5a4707df811cd5da4aa5fbb2aae19"
+checksum = "566cafdd92868e0939d3fb961bd0dc25fcfaaed179291093b3d43e6b3150ea10"
 dependencies = [
  "base64 0.22.0",
  "bytes",
@@ -4242,7 +4227,7 @@ dependencies = [
  "http-body 1.0.0",
  "http-body-util",
  "hyper 1.2.0",
- "hyper-tls 0.6.0",
+ "hyper-tls",
  "hyper-util",
  "ipnet",
  "js-sys",
