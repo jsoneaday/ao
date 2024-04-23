@@ -7,6 +7,9 @@ pub mod domain {
     pub mod utils {
         pub mod error;
     }
+    pub mod client {
+        pub mod arweave;
+    }
     pub mod clients {
         pub mod gateway;
         pub mod wallet;

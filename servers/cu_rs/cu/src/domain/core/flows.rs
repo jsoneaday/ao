@@ -1,8 +1,9 @@
 use std::sync::Arc;
-use ao_common::domain::{dal::{Config, Gateway, Log, Signer, Uploader, Wallet}, UnitLog};
+use ao_common::domain::{builder::Builder, dal::{Config, Gateway, Log, Signer, Uploader, Wallet}, UnitLog};
 use ao_common::domain::uploader::UploaderClient;
 use ao_common::domain::signer::ArweaveSigner;
 use crate::domain::{clients::{gateway::ArweaveGateway, wallet::FileWallet}, config::AoConfig};
+use dotenv::dotenv;
 
 pub struct Deps {
     // pub data_store: Arc<dyn DataStore>,
@@ -45,3 +46,10 @@ pub async fn init_deps(mode: Option<String>) -> Arc<Deps> {
         uploader,
     })
 }
+
+pub fn init_builder(deps: &Arc<Deps>) -> Result<Builder, String> {
+    dotenv().ok();
+    let builder = Builder::new(deps.gateway.clone(), deps.signer.clone(), &deps.logger)?;
+    return Ok(builder);
+}
+

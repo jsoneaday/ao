@@ -186,22 +186,12 @@ pub struct SchedulerResult {
 mod tests {
     use std::sync::Once;
     use ao_common::models::{gql_models::{Amount, MetaData}, shared_models::Owner};
-    use dotenv::dotenv;
     use super::*;
 
     const GATEWAY_URL: &str = "https://arweave.net";
     const UPLOADER_URL: &str = "https://up.arweave.net";
     const SCHEDULER_WALLET_ADDRESS: &str = "_GQ33BkPtZrqxA84vM8Zk-N2aO0toNNu_C-l-rawrBA";
     static INIT: Once = Once::new();
-
-    static JWK_STRING: once_cell::sync::OnceCell<String> = once_cell::sync::OnceCell::new();
-    fn get_jwk() -> &'static String {
-        JWK_STRING.get_or_init(|| {
-            dotenv().ok();
-
-            std::env::var("WALLET").unwrap()
-        })
-    }
 
     static WALLET_FILE: once_cell::sync::OnceCell<String> = once_cell::sync::OnceCell::new();
     fn get_wallet_file() -> &'static String {

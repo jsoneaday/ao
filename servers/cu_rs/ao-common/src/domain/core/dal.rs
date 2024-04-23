@@ -63,9 +63,8 @@ impl From<UploaderErrorType> for String {
     }
 }
 
-#[async_trait]
 pub trait Uploader: Send + Sync {
-    async fn upload(&self, tx: Vec<u8>) -> Result<(), UploaderErrorType>;
+    fn try_upload(&self, tx: Vec<u8>) -> Result<(), UploaderErrorType>;
 }
 
 #[derive(Debug)]

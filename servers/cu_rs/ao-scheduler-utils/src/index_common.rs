@@ -1,4 +1,3 @@
-use std::env::VarError;
 use crate::{client::{gateway::Gateway, in_memory::LocalLruCache, scheduler::CheckForRedirect}, locate::Locate, raw::Raw, validate::Validate};
 
 const DEFAULT_GATEWAY_URL: &str = "https://arweave.net";
