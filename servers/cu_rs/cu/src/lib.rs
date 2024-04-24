@@ -4,10 +4,12 @@ pub mod app_state;
 pub mod domain {
     pub mod index;
     pub mod config;
+    pub mod dal;
     pub mod utils {
         pub mod error;
     }
     pub mod client {
+        pub mod ao_block;
         pub mod arweave;
     }
     pub mod clients {
