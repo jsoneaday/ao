@@ -11,6 +11,7 @@ pub mod domain {
     pub mod client {
         pub mod ao_block;
         pub mod arweave;
+        pub mod sqlite;
     }
     pub mod clients {
         pub mod gateway;

@@ -38,6 +38,7 @@ serde = { version = "1.0.197", features = ["derive"] }
 serde_json = "1.0.114"
 serde_repr = "0.1.18"
 serde-wasm-bindgen = "0.6.5"
+sqlx = { version = "0.7.4", features = ["sqlite", "runtime-tokio-rustls", "chrono"]}
 tokio = { version = "1.36.0", features = ["full"] }
 tokio-stream = "0.1.15"
 uuid = { version = "1.8.0", features = ["v4", "serde"] }
@@ -56,3 +57,4 @@ jsonwebkey = "0.3.5"
 rsa = "0.9.6"
 bundlr-sdk = "0.5.0"
 rand = "0.8.5"
+bytes = "1.6.0"
