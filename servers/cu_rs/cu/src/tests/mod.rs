@@ -1,0 +1,6 @@
+pub mod domain {
+    pub mod client {
+        pub mod test_sqlite;
+        pub mod test_arweave;
+    }
+}

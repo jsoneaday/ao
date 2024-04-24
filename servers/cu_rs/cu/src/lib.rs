@@ -1,40 +1,8 @@
 pub mod app;
 pub mod config;
 pub mod app_state;
-pub mod domain {
-    pub mod index;
-    pub mod config;
-    pub mod dal;
-    pub mod utils {
-        pub mod error;
-    }
-    pub mod client {
-        pub mod ao_block;
-        pub mod arweave;
-        pub mod sqlite;
-    }
-    pub mod clients {
-        pub mod gateway;
-        pub mod wallet;
-    }
-    pub mod core {
-        pub mod flows;
-    }
-    pub mod model {        
-        pub mod model;
-        pub mod domain_config_schema;
-        pub mod shared_validation;
-        pub mod stream_validation;
-        pub mod parse_schema;
-        pub mod server_config_schema;
-        pub mod positive_int_schema;
-        pub mod url_parse_schema;
-        pub mod db_mode_schema;
-        pub mod db_max_listeners_schema;
-        pub mod truthy_schema;
-        pub mod uuid_array_schema;
-    }    
-}
+mod tests;
+pub mod domain;
 pub mod env_vars;
 pub mod utils {
     pub mod datetime;

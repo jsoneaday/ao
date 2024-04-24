@@ -33,6 +33,8 @@ log = "0.4.21"
 mockall = "0.12.1"
 multipart = "0.18.0"
 nix = "0.28.0"
+once_cell = "1.19.0"
+regex = "1.10.4"
 reqwest = { version = "0.12.4", features = ["json", "multipart"] }
 serde = { version = "1.0.197", features = ["derive"] }
 serde_json = "1.0.114"
@@ -42,11 +44,9 @@ sqlx = { version = "0.7.4", features = ["sqlite", "runtime-tokio-rustls", "chron
 tokio = { version = "1.36.0", features = ["full"] }
 tokio-stream = "0.1.15"
 uuid = { version = "1.8.0", features = ["v4", "serde"] }
-wasmedge-sdk = "0.13.2"
 valid = { version = "0.3.1", features = ["serde1"] }
-regex = "1.10.4"
+wasmedge-sdk = "0.13.2"
 wasm-bindgen = "0.2.92"
-once_cell = "1.19.0"
 
 ao-scheduler-utils = { path = "../ao-scheduler-utils" }
 ao-common = { path = "../ao-common" }
