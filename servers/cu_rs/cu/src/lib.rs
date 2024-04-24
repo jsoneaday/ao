@@ -19,8 +19,8 @@ pub mod domain {
     pub mod core {
         pub mod flows;
     }
-    // pub mod model;
-    pub mod validation {
+    pub mod model {        
+        pub mod model;
         pub mod domain_config_schema;
         pub mod shared_validation;
         pub mod stream_validation;
@@ -32,8 +32,7 @@ pub mod domain {
         pub mod db_max_listeners_schema;
         pub mod truthy_schema;
         pub mod uuid_array_schema;
-    }
-    pub mod model;
+    }    
 }
 pub mod env_vars;
 pub mod utils {

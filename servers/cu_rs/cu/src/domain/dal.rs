@@ -1,4 +1,4 @@
-use super::model::{BlockSchema, EvaluationSchema, EvaluationSchemaExtended, FromOrToEvaluationSchema, MessageMetaSchema, ModuleSchema, ProcessSchema, ProcessSchemaWithoutId, ProcessUrl, RawTagSchema, Sort, StreamSchema, TimestampSchema};
+use crate::domain::model::model::{BlockSchema, EvaluationSchema, EvaluationSchemaExtended, FromOrToEvaluationSchema, MessageMetaSchema, ModuleSchema, ProcessSchema, ProcessSchemaWithoutId, ProcessUrl, RawTagSchema, Sort, StreamSchema, TimestampSchema};
 use async_trait::async_trait;
 use reqwest::Url;
 

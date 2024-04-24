@@ -3,7 +3,7 @@ use dotenv::dotenv;
 use once_cell::sync::OnceCell;
 use valid::ValidationError;
 use crate::{
-    domain::validation::{
+    domain::model::{
         domain_config_schema::{DomainConfigSchema, StartDomainConfigSchema}, 
         parse_schema::StartSchemaParser, 
         server_config_schema::{DevOrProd, ServerConfigSchema, StartServerConfigSchema}

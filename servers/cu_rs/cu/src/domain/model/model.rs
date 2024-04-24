@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 use valid::ValidationError;
 use once_cell::sync::OnceCell;
-use super::validation::domain_config_schema::{DomainConfigSchema, StartDomainConfigSchema};
-use super::validation::parse_schema::StartSchemaParser;
+use super::domain_config_schema::{DomainConfigSchema, StartDomainConfigSchema};
+use super::parse_schema::StartSchemaParser;
 use serde::Serialize;
 
 static DOMAIN_CONFIG_SCHEMA: OnceCell<Result<DomainConfigSchema, ValidationError>> = OnceCell::new();

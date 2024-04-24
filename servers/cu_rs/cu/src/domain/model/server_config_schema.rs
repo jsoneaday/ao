@@ -1,5 +1,5 @@
 use valid::{invalid_value, ConstraintViolation, State, Validate, Validation, ValidationError};
-use crate::{config::StartConfigEnv, domain::validation::domain_config_schema::{DomainConfigSchema, StartDomainConfigSchema}};
+use crate::{config::StartConfigEnv, domain::model::domain_config_schema::{DomainConfigSchema, StartDomainConfigSchema}};
 use super::{domain_config_schema::{StartDomainConfigSchemaConstraint, StartDomainConfigSchemaState}, parse_schema::StartSchemaParser};
 
 #[derive(Clone)]

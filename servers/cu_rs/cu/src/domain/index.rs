@@ -1,4 +1,4 @@
-use super::validation::domain_config_schema::DomainConfigSchema;
+use crate::domain::model::domain_config_schema::DomainConfigSchema;
 use log::info;
 use crate::domain::client::arweave::InternalArweave;
 
