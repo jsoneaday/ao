@@ -10,6 +10,7 @@ mod validate;
 mod err;
 mod raw;
 mod locate;
+mod dal;
 pub mod index_common;
 
 /// lib.rs is effectively index.js

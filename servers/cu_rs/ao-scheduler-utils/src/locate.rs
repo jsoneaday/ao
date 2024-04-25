@@ -1,17 +1,22 @@
-use crate::{client::{gateway::{GatewayMaker, SchedulerResult}, in_memory::{Cacher, UrlOwner}, scheduler::CheckForRedirectMaker}, err::SchedulerErrors};
+use crate::client::gateway::SchedulerResult;
+use crate::err::SchedulerErrors;
+use crate::dal::{CacherSchema, CheckForRedirectSchema, LoadProcessSchedulerSchema, LoadSchedulerSchema, Scheduler};
 use async_trait::async_trait;
+use std::marker::{Send, Sync};
 
-pub struct Locate<C: Cacher, G: GatewayMaker, R: CheckForRedirectMaker> {
-  gateway: G,
+pub struct Locate<LP: LoadProcessSchedulerSchema, LS: LoadSchedulerSchema, C: CacherSchema, R: CheckForRedirectSchema> {
+  load_process_scheduler: LP,
+  load_scheduler: LS,
   cache: C,
   follow_redirects: bool,
   check_for_redirect: R
 }
 
-impl<C: Cacher, G: GatewayMaker, R: CheckForRedirectMaker> Locate<C, G, R> {
-  pub fn new(gateway: G, cache: C, follow_redirects: bool, check_for_redirect: R) -> Self {
+impl<LP: LoadProcessSchedulerSchema, LS: LoadSchedulerSchema, C: CacherSchema, R: CheckForRedirectSchema> Locate<LP, LS, C, R> {
+  pub fn new(load_process_scheduler: LP, load_scheduler: LS, cache: C, follow_redirects: bool, check_for_redirect: R) -> Self {
     Locate {
-      gateway,
+      load_process_scheduler,
+      load_scheduler,
       cache,
       follow_redirects,
       check_for_redirect
@@ -21,15 +26,16 @@ impl<C: Cacher, G: GatewayMaker, R: CheckForRedirectMaker> Locate<C, G, R> {
 
 #[async_trait]
 pub trait LocateMaker {
-  async fn locate(&mut self, process: &str, scheduler_hint: Option<&str>) -> Result<UrlOwner, SchedulerErrors>;
+  async fn locate(&mut self, process: &str, scheduler_hint: Option<&str>) -> Result<Scheduler, SchedulerErrors>;
 }
 
 #[async_trait]
-impl<C, G, R>  LocateMaker for Locate<C, G, R>
+impl<LP, LS, C, R>  LocateMaker for Locate<LP, LS, C, R>
 where
-    C: Cacher + std::marker::Send + std::marker::Sync,
-    G: GatewayMaker + std::marker::Send + std::marker::Sync,
-    R: CheckForRedirectMaker + std::marker::Send + std::marker::Sync {
+    LP: LoadProcessSchedulerSchema + Send + Sync,
+    LS: LoadSchedulerSchema + Send + Sync,
+    C: CacherSchema + Send + Sync,
+    R: CheckForRedirectSchema + Send + Sync {
   /**
    * Locate the scheduler for the given process.
    *
@@ -41,8 +47,8 @@ where
    * from a gateway, and instead skips to querying Scheduler-Location
    * @returns { url: string, address: string } - an object whose url field is the Scheduler Location
    */  
-  async fn locate(&mut self, process: &str, scheduler_hint: Option<&str>) -> Result<UrlOwner, SchedulerErrors> {
-      if let Some(cached) = self.cache.get_by_process_with(process).await { 
+  async fn locate(&mut self, process: &str, scheduler_hint: Option<&str>) -> Result<Scheduler, SchedulerErrors> {
+      if let Some(cached) = self.cache.get_by_process(process).await { 
         return Ok(cached);
       }
       
@@ -52,19 +58,19 @@ where
       #[allow(unused)]
       let mut scheduler: Option<SchedulerResult> = None;   
       if scheduler_hint.is_some() {
-        if let Some(by_owner) = self.cache.get_by_owner_with(scheduler_hint.unwrap()).await {
+        if let Some(by_owner) = self.cache.get_by_owner(scheduler_hint.unwrap()).await {
           return Ok(by_owner);
         }
 
-        match self.gateway.load_scheduler(scheduler_hint.unwrap()).await {
+        match self.load_scheduler(scheduler_hint.unwrap()).await {
           Ok(sched) => {
-            self.cache.set_by_owner_with(&sched.owner, &sched.url, sched.ttl).await;
+            self.cache.set_by_owner(&sched.owner, &sched.url, sched.ttl).await;
             scheduler = Some(sched);
           },
           Err(e) => return Err(e)
         }
       } else {
-        match self.gateway.load_process_scheduler(process).await {
+        match self.load_process_scheduler(process).await {
           Ok(sched) => scheduler = Some(sched),
           Err(e) => return Err(e)
         }
@@ -73,14 +79,14 @@ where
       let scheduler = scheduler.unwrap();
       let mut final_url = scheduler.url.clone();
       if self.follow_redirects {        
-        match self.check_for_redirect.check_for_redirect_with(&scheduler.url, process).await {
+        match self.check_for_redirect(&scheduler.url, process).await {
           Ok(url) => final_url = url,
           Err(e) => return Err(e)
         };
       }
 
-      let by_process = UrlOwner { url: final_url, address: scheduler.owner };
-      self.cache.set_by_process_with(process, by_process.clone(), scheduler.ttl).await;
+      let by_process = Scheduler { url: final_url, ttl: None, address: scheduler.owner };
+      self.cache.set_by_process(process, by_process.clone(), scheduler.ttl).await;
       return Ok(by_process);
   }
 }
@@ -89,7 +95,7 @@ where
   #[cfg(test)]
   mod tests {
     use async_trait::async_trait;
-    use crate::client::gateway::SchedulerResult;
+    use crate::dal::ProcessCacheEntry;
     use super::*;
 
     const PROCESS: &str = "zc24Wpv_i6NNCEdxeKt7dcNrqL5w0hrShtSCcFGGL24";
@@ -98,288 +104,341 @@ where
     const DOMAIN_REDIRECT: &str = "https://foo-redirect.bar";
     const TEN_MS: u64 = 10;
     
-    struct MockGatewayLoadAndCacheIt;
-    #[async_trait]
-    impl GatewayMaker for MockGatewayLoadAndCacheIt {
-      async fn load_process_scheduler<'a>(&self, process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
-        assert!(process_tx_id == PROCESS);
-        Ok(SchedulerResult { url: DOMAIN.to_string(), ttl: TEN_MS, owner: SCHEDULER.to_string()})
+    mod should_load_the_value_and_cache_it {
+      use super::*;
+
+      struct MockLoadProcessScheduler;
+      #[async_trait]
+      impl LoadProcessSchedulerSchema for MockLoadProcessScheduler {
+        async fn load_process_scheduler(&self, process: &str) -> Result<Scheduler, SchedulerErrors>  {
+            assert!(process == PROCESS);
+            Ok(Scheduler { url: DOMAIN.to_string(), ttl: TEN_MS, address: SCHEDULER.to_string() })
+        }
       }
-      async fn load_scheduler<'a>(&self,_scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>  {
-          Err(SchedulerErrors::new_invalid_scheduler_location("should not load the scheduler if no hint".to_string()))
+
+      struct MockLoadScheduler;
+      #[async_trait]
+      impl LoadSchedulerSchema for MockLoadScheduler {
+        async fn load_scheduler(&self, _wallet_address: &str) -> Result<Scheduler, SchedulerErrors>  {
+            Err(SchedulerErrors::new_invalid_scheduler_location("should not load the scheduler if no hint".to_string()))
+        }
+      }
+
+      struct MockCache;
+      #[async_trait]
+      impl CacherSchema for MockCache {
+        async fn get_by_process(&mut self, process: &str) -> Option<ProcessCacheEntry> {
+          assert!(process == PROCESS);
+          None
+        }   
+        async fn get_by_owner(&mut self, _owner: &str) -> Option<Scheduler> {
+          unimplemented!("should not get by owner, if no scheduler hint")
+        }    
+        async fn set_by_process(&mut self, process_tx_id: &str, value: ProcessCacheEntry, ttl: u64) { 
+          assert!(process_tx_id == PROCESS);
+          assert!(value.url == DOMAIN);
+          assert!(value.address == SCHEDULER);
+          assert!(ttl == TEN_MS);
+        }    
+        async fn set_by_owner(&mut self, owner: &str, url: &str, ttl: u64) {
+            assert!(owner == SCHEDULER);
+            assert!(url == DOMAIN);
+            assert!(ttl == TEN_MS);
+        }
+      }
+
+      struct MockCheckForRedirect;
+      #[async_trait]
+      impl CheckForRedirectSchema for MockCheckForRedirect {
+        async fn check_for_redirect(&self, _url: &str, _process: &str) -> Result<String, SchedulerErrors> {
+          unimplemented!("should not check for redirect if followRedirects is false")
+        }
+      }
+
+      #[tokio::test]
+      async fn test_location_load_and_cache() {
+        let mut locate = Locate {
+          load_process_scheduler: MockLoadProcessScheduler,
+          load_scheduler: MockLoadScheduler,
+          cache: MockCache,
+          follow_redirects: false,
+          check_for_redirect: MockCheckForRedirect
+        };
+        let result = locate.locate(PROCESS, None).await;
+        let result = result.unwrap();
+        assert!(result.url == DOMAIN && result.address == SCHEDULER);
       }
     }
 
-    struct MockCacheLoadAndCacheIt;
-    #[async_trait]
-    impl Cacher for MockCacheLoadAndCacheIt {
-      async fn get_by_process_with(&mut self, process: &str) -> Option<UrlOwner> {
-        assert!(process == PROCESS);
-        None
-      }   
-      async fn get_by_owner_with(&mut self, _owner: &str) -> Option<UrlOwner> {
-        unimplemented!()
-      }    
-      async fn set_by_process_with(&mut self, process_tx_id: &str, value: UrlOwner, ttl: u64) { 
-        assert!(process_tx_id == PROCESS);
-        assert!(value.url == DOMAIN);
-        assert!(value.address == SCHEDULER);
-        assert!(ttl == TEN_MS);
-      }    
-      async fn set_by_owner_with(&mut self, owner: &str, url: &str, ttl: u64) {
-          assert!(owner == SCHEDULER);
+    mod should_serve_the_cached_value {
+      use super::*;
+
+      struct MockLoadProcessScheduler;
+      #[async_trait]
+      impl LoadProcessSchedulerSchema for MockLoadProcessScheduler {
+        async fn load_process_scheduler(&self, process: &str) -> Result<Scheduler, SchedulerErrors>  {
+          unimplemented!("should never call on chain if in cache")
+        }
+      }
+
+      struct MockLoadScheduler;
+      #[async_trait]
+      impl LoadSchedulerSchema for MockLoadScheduler {
+        async fn load_scheduler(&self, process: &str) -> Result<Scheduler, SchedulerErrors>  {
+          unimplemented!("should not load the scheduler if no hint")
+        }
+      }
+
+      struct MockCache;
+      #[async_trait]
+      impl CacherSchema for MockCache {
+        async fn get_by_process(&mut self, process: &str) -> Option<ProcessCacheEntry> {
+          assert!(process == PROCESS);
+          Some(ProcessCacheEntry { url: DOMAIN.to_string(), ttl: None, address: SCHEDULER.to_string() })
+        }    
+        async fn get_by_owner(&mut self, _owner: &str) -> Option<Scheduler> {
+          panic!("should not check cache by owner if cached by process");
+        }    
+        async fn set_by_process(&mut self, _process_tx_id: &str, _value: ProcessCacheEntry, _ttl: u64) { 
+          panic!("should not set cache by process if cached by process");
+        }    
+        async fn set_by_owner(&mut self, _owner: &str, _url: &str, _ttl: u64) {
+          panic!("should not set cache by owner if cached by process");
+        }
+      }
+
+      struct MockCheckForRedirect;
+      #[async_trait]
+      impl CheckForRedirectSchema for MockCheckForRedirect {
+        async fn check_for_redirect(&self, _url: &str, _process: &str) -> Result<String, SchedulerErrors> {
+          unimplemented!("should not check for redirect if followRedirects is false")
+        }
+      }
+
+      #[tokio::test]
+      async fn test_location_serve_cached_value() {
+        let mut locate = Locate {
+          load_process_scheduler: MockLoadProcessScheduler,
+          load_scheduler: MockLoadScheduler,
+          cache: MockCache,
+          follow_redirects: false,
+          check_for_redirect: MockCheckForRedirect
+        };
+        let result = locate.locate(PROCESS, None).await;
+        let result = result.unwrap();
+        assert!(result.url == DOMAIN && result.address == SCHEDULER);
+      }
+    }
+
+    mod should_load_the_redirected_value_and_cache_it {
+      use super::*;
+
+      struct MockLoadProcessScheduler;
+      #[async_trait]
+      impl LoadProcessSchedulerSchema for MockLoadProcessScheduler {
+        async fn load_process_scheduler(&self, process: &str) -> Result<Scheduler, SchedulerErrors>  {
+            assert!(process == PROCESS);
+            Ok(Scheduler { url: DOMAIN.to_string(), ttl: TEN_MS, address: SCHEDULER.to_string() })
+        }
+      }
+
+      struct MockLoadScheduler;
+      #[async_trait]
+      impl LoadSchedulerSchema for MockLoadScheduler {
+        async fn load_scheduler(&self, process: &str) -> Result<Scheduler, SchedulerErrors>  {
+            unimplemented!("should not load the scheduler if no hint")
+        }
+      }
+
+      struct MockCache;
+      #[async_trait]
+      impl CacherSchema for MockCache {
+        async fn get_by_process(&mut self, process: &str) -> Option<ProcessCacheEntry> {
+          assert!(process == PROCESS);
+          None
+        }    
+        async fn get_by_owner(&mut self, _owner: &str) -> Option<Scheduler> {
+          unimplemented!("should not get by owner, if no scheduler hint")
+        }    
+        async fn set_by_process(&mut self, process_tx_id: &str, value: ProcessCacheEntry, ttl: u64) { 
+          assert!(process_tx_id == PROCESS);
+          assert!(value.url == DOMAIN_REDIRECT);
+          assert!(value.address == SCHEDULER);
+          assert!(ttl == TEN_MS);
+        }    
+        async fn set_by_owner(&mut self, owner: &str, url: &str, ttl: u64) {
+          assert!(owner == SCHEDULER);          
+          // Original DOMAIN not the redirect          
           assert!(url == DOMAIN);
           assert!(ttl == TEN_MS);
+        }
+      }
+
+      struct MockCheckForRedirect;
+      #[async_trait]
+      impl CheckForRedirectSchema for MockCheckForRedirect {
+        async fn check_for_redirect(&self, url: &str, process: &str) -> Result<String, SchedulerErrors> {
+          assert!(process == PROCESS);
+          assert!(url == DOMAIN);
+          Ok(DOMAIN_REDIRECT.to_string())
+        }
+      }
+
+      #[tokio::test]
+      async fn test_location_load_redirected_and_cache_it() {
+        let mut locate = Locate {
+          load_process_scheduler: MockLoadProcessScheduler,
+          load_scheduler: MockLoadScheduler,
+          cache: MockCache,
+          follow_redirects: true,
+          check_for_redirect: MockCheckForRedirect
+        };
+        let result = locate.locate(PROCESS, None).await;
+        let result = result.unwrap();
+        assert!(result.url == DOMAIN_REDIRECT && result.address == SCHEDULER);
       }
     }
 
-    struct MockCheckForRedirectLoadAndCacheIt;
-    #[async_trait]
-    impl CheckForRedirectMaker for MockCheckForRedirectLoadAndCacheIt {
-      async fn check_for_redirect_with(&self, _url: &str, _process: &str) -> Result<String, SchedulerErrors> {
-        unimplemented!()
+    mod should_use_the_scheduler_hint_and_skip_querying_for_the_process {
+      use super::*;
+
+      struct MockLoadProcessScheduler;
+      #[async_trait]
+      impl LoadProcessSchedulerSchema for MockLoadProcessScheduler {
+        async fn load_process_scheduler(&self, process: &str) -> Result<Scheduler, SchedulerErrors>  {
+            unimplemented!("should not load process if given a scheduler hint")
+        }
+      }
+
+      struct MockLoadScheduler;
+      #[async_trait]
+      impl LoadSchedulerSchema for MockLoadScheduler {
+        async fn load_scheduler(&self, owner: &str) -> Result<Scheduler, SchedulerErrors>  {
+          assert!(owner == SCHEDULER);
+          Ok(Scheduler { url: DOMAIN.to_string(), ttl: TEN_MS, address: SCHEDULER.to_string() })
+        }
+      }
+
+      struct MockCache;
+      #[async_trait]
+      impl CacherSchema for MockCache {
+        async fn get_by_process(&mut self, process: &str) -> Option<ProcessCacheEntry> {
+          assert!(process == PROCESS);
+          None
+        }    
+        async fn get_by_owner(&mut self, owner: &str) -> Option<Scheduler> {
+          assert!(owner == SCHEDULER);
+          None
+        }    
+        async fn set_by_process(&mut self, process_tx_id: &str, value: ProcessCacheEntry, ttl: u64) { 
+          assert!(process_tx_id == PROCESS);
+          assert!(value.url == DOMAIN_REDIRECT);
+          assert!(value.address == SCHEDULER);
+          assert!(ttl == TEN_MS);
+        }    
+        async fn set_by_owner(&mut self, owner: &str, url: &str, ttl: u64) {
+          assert!(owner == SCHEDULER);          
+          // Original DOMAIN not the redirect
+          assert!(url == DOMAIN);
+          assert!(ttl == TEN_MS);
+        }
+      }
+
+      struct MockCheckForRedirect;
+      #[async_trait]
+      impl CheckForRedirectSchema for MockCheckForRedirect {
+        async fn check_for_redirect(&self, url: &str, process: &str) -> Result<String, SchedulerErrors> {
+          assert!(process == PROCESS);
+          assert!(url == DOMAIN);
+          Ok(DOMAIN_REDIRECT.to_string())
+        }
+      }
+
+      #[tokio::test]
+      async fn test_location_use_scheduler_hint_and_skip_querying_process() {
+        let mut locate = Locate {
+          load_process_scheduler: MockLoadProcessScheduler,
+          load_scheduler: MockLoadScheduler,
+          cache: MockCache,
+          follow_redirects: true,
+          check_for_redirect: MockCheckForRedirect
+        };
+        let result = locate.locate(
+          PROCESS, 
+          Some(SCHEDULER)
+        ).await;
+        let result = result.unwrap();
+        assert!(result.url == DOMAIN_REDIRECT && result.address == SCHEDULER);
       }
     }
 
-    #[tokio::test]
-    async fn test_location_load_and_cache() {
-      let mut locate = Locate {
-        gateway: MockGatewayLoadAndCacheIt,
-        cache: MockCacheLoadAndCacheIt,
-        follow_redirects: false,
-        check_for_redirect: MockCheckForRedirectLoadAndCacheIt
-      };
-      let result = locate.locate(PROCESS, None).await;
-      let result = result.unwrap();
-      assert!(result.url == DOMAIN && result.address == SCHEDULER);
-    }
+    mod should_use_the_scheduler_hint_and_use_the_cached_owner {
+      use super::*;
 
-    struct MockGatewayServeCachedValue;
-    #[async_trait]
-    impl GatewayMaker for MockGatewayServeCachedValue {
-      async fn load_process_scheduler<'a>(&self, _process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
-        Err(SchedulerErrors::new_invalid_scheduler_location("should never call on chain if in cache".to_string()))
+      struct MockLoadProcessScheduler;
+      #[async_trait]
+      impl LoadProcessSchedulerSchema for MockLoadProcessScheduler {
+        async fn load_process_scheduler(&self, _scheduler_wallet_address: &str) -> Result<Scheduler, SchedulerErrors>  {
+            unimplemented!("should not load process if given a scheduler hint");
+        }
       }
-      async fn load_scheduler<'a>(&self, _scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>  {
-          Err(SchedulerErrors::new_invalid_scheduler_location("should not load the scheduler if no hint".to_string()))
-      }
-    }
 
-    struct MockCacheServeCachedValue;
-    #[async_trait]
-    impl Cacher for MockCacheServeCachedValue {
-      async fn get_by_process_with(&mut self, process: &str) -> Option<UrlOwner> {
-        assert!(process == PROCESS);
-        Some(UrlOwner { url: DOMAIN.to_string(), address: SCHEDULER.to_string() })
-      }    
-      async fn get_by_owner_with(&mut self, _owner: &str) -> Option<UrlOwner> {
-        panic!("should not check cache by owner if cached by process");
-      }    
-      async fn set_by_process_with(&mut self, _process_tx_id: &str, _value: UrlOwner, _ttl: u64) { 
-        panic!("should not set cache by process if cached by process");
-      }    
-      async fn set_by_owner_with(&mut self, _owner: &str, _url: &str, _ttl: u64) {
-        panic!("should not set cache by owner if cached by process");
+      struct MockLoadScheduler;
+      #[async_trait]
+      impl LoadSchedulerSchema for MockLoadScheduler {
+        async fn load_scheduler(&self, _scheduler_wallet_address: &str) -> Result<Scheduler, SchedulerErrors>  {
+            unimplemented!("should not load the scheduler if cached");
+        }
       }
-    }
 
-    struct MockCheckForRedirectServeCachedValue;
-    #[async_trait]
-    impl CheckForRedirectMaker for MockCheckForRedirectServeCachedValue {
-      async fn check_for_redirect_with(&self, _url: &str, _process: &str) -> Result<String, SchedulerErrors> {
-        unimplemented!()
+      struct MockCache;
+      #[async_trait]
+      impl CacherSchema for MockCache {
+        async fn get_by_process(&mut self, process: &str) -> Option<ProcessCacheEntry> {
+          assert!(process == PROCESS);
+          None
+        }    
+        async fn get_by_owner(&mut self, owner: &str) -> Option<Scheduler> {
+          assert!(owner == SCHEDULER);
+          Some(Scheduler { url: DOMAIN.to_string(), ttl: Some(TEN_MS), address: SCHEDULER.to_string() })
+        }    
+        async fn set_by_process(&mut self, process_tx_id: &str, value: ProcessCacheEntry, _ttl: u64) { 
+          assert!(process_tx_id == PROCESS);
+          assert!(value.url == DOMAIN_REDIRECT);
+          assert!(value.address == SCHEDULER);
+          assert!(value.ttl == Some(TEN_MS));
+        }    
+        async fn set_by_owner(&mut self, _owner: &str, _url: &str, _ttl: u64) {
+          panic!("should not cache by owner if cached");
+        }
       }
-    }
 
-    #[tokio::test]
-    async fn test_location_serve_cached_value() {
-      let mut locate = Locate {
-        gateway: MockGatewayServeCachedValue,
-        cache: MockCacheServeCachedValue,
-        follow_redirects: false,
-        check_for_redirect: MockCheckForRedirectServeCachedValue
-      };
-      let result = locate.locate(PROCESS, None).await;
-      let result = result.unwrap();
-      assert!(result.url == DOMAIN && result.address == SCHEDULER);
-    }
-
-    struct MockGatewayLoadRedirectedAndCacheIt;
-    #[async_trait]
-    impl GatewayMaker for MockGatewayLoadRedirectedAndCacheIt {
-      async fn load_process_scheduler<'a>(&self, process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
-        assert!(process_tx_id == PROCESS);
-        Ok(SchedulerResult { url: DOMAIN.to_string(), ttl: TEN_MS, owner: SCHEDULER.to_string()})
+      struct MockCheckForRedirect;
+      #[async_trait]
+      impl CheckForRedirectSchema for MockCheckForRedirect {
+        async fn check_for_redirect(&self, url: &str, process: &str) -> Result<String, SchedulerErrors> {
+          assert!(process == PROCESS);
+          assert!(url == DOMAIN);
+          
+          Ok(DOMAIN_REDIRECT.to_string())
+        }
       }
-      async fn load_scheduler<'a>(&self, _scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>  {
-          Err(SchedulerErrors::new_invalid_scheduler_location("should not load the scheduler if no hint".to_string()))
-      }
-    }
 
-    struct MockCacheLoadRedirectedAndCacheIt;
-    #[async_trait]
-    impl Cacher for MockCacheLoadRedirectedAndCacheIt {
-      async fn get_by_process_with(&mut self, process: &str) -> Option<UrlOwner> {
-        assert!(process == PROCESS);
-        None
-      }    
-      async fn get_by_owner_with(&mut self, _owner: &str) -> Option<UrlOwner> {
-        unimplemented!()
-      }    
-      async fn set_by_process_with(&mut self, process_tx_id: &str, value: UrlOwner, ttl: u64) { 
-        assert!(process_tx_id == PROCESS);
-        assert!(value.url == DOMAIN_REDIRECT);
-        assert!(value.address == SCHEDULER);
-        assert!(ttl == TEN_MS);
-      }    
-      async fn set_by_owner_with(&mut self, owner: &str, url: &str, ttl: u64) {
-        assert!(owner == SCHEDULER);
-        assert!(url == DOMAIN);
-        assert!(ttl == TEN_MS);
+      #[tokio::test]
+      async fn test_location_use_scheduler_hint_and_cached_owner() {
+        let mut locate = Locate {
+          load_process_scheduler: MockLoadProcessScheduler,
+          load_scheduler: MockLoadScheduler,
+          cache: MockCache,
+          follow_redirects: true,
+          check_for_redirect: MockCheckForRedirect
+        };
+        let result = locate.locate(
+          PROCESS, 
+          Some(SCHEDULER)
+        ).await;
+        let result = result.unwrap();
+        assert!(result.url == DOMAIN_REDIRECT && result.address == SCHEDULER);
       }
-    }
-
-    struct MockCheckForRedirectLoadRedirectedAndCacheIt;
-    #[async_trait]
-    impl CheckForRedirectMaker for MockCheckForRedirectLoadRedirectedAndCacheIt {
-      async fn check_for_redirect_with(&self, url: &str, process: &str) -> Result<String, SchedulerErrors> {
-        assert!(process == PROCESS);
-        assert!(url == DOMAIN);
-        Ok(DOMAIN_REDIRECT.to_string())
-      }
-    }
-
-    #[tokio::test]
-    async fn test_location_load_redirected_and_cache_it() {
-      let mut locate = Locate {
-        gateway: MockGatewayLoadRedirectedAndCacheIt,
-        cache: MockCacheLoadRedirectedAndCacheIt,
-        follow_redirects: true,
-        check_for_redirect: MockCheckForRedirectLoadRedirectedAndCacheIt
-      };
-      let result = locate.locate(PROCESS, None).await;
-      let result = result.unwrap();
-      assert!(result.url == DOMAIN_REDIRECT && result.address == SCHEDULER);
-    }
-
-    struct MockGatewayUseSchedulerHintAndSkipQueryingProcess;
-    #[async_trait]
-    impl GatewayMaker for MockGatewayUseSchedulerHintAndSkipQueryingProcess {
-      async fn load_process_scheduler<'a>(&self, _process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
-        panic!("should not load process if given a scheduler hint");
-      }
-      async fn load_scheduler<'a>(&self, scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>  {
-          assert!(scheduler_wallet_address == SCHEDULER);
-          Ok(SchedulerResult { url: DOMAIN.to_string(), ttl: TEN_MS, owner: SCHEDULER.to_string() })
-      }
-    }
-
-    struct MockCacheUseSchedulerHintAndSkipQueryingProcess;
-    #[async_trait]
-    impl Cacher for MockCacheUseSchedulerHintAndSkipQueryingProcess {
-      async fn get_by_process_with(&mut self, process: &str) -> Option<UrlOwner> {
-        assert!(process == PROCESS);
-        None
-      }    
-      async fn get_by_owner_with(&mut self, owner: &str) -> Option<UrlOwner> {
-        assert!(owner == SCHEDULER);
-        None
-      }    
-      async fn set_by_process_with(&mut self, process_tx_id: &str, value: UrlOwner, ttl: u64) { 
-        assert!(process_tx_id == PROCESS);
-        assert!(value.url == DOMAIN_REDIRECT);
-        assert!(value.address == SCHEDULER);
-        assert!(ttl == TEN_MS);
-      }    
-      async fn set_by_owner_with(&mut self, owner: &str, url: &str, ttl: u64) {
-        assert!(owner == SCHEDULER);
-        assert!(url == DOMAIN);
-        assert!(ttl == TEN_MS);
-      }
-    }
-
-    struct MockCheckForRedirectUseSchedulerHintAndSkipQueryingProcess;
-    #[async_trait]
-    impl CheckForRedirectMaker for MockCheckForRedirectUseSchedulerHintAndSkipQueryingProcess {
-      async fn check_for_redirect_with(&self, url: &str, process: &str) -> Result<String, SchedulerErrors> {
-        assert!(process == PROCESS);
-        assert!(url == DOMAIN);
-        Ok(DOMAIN_REDIRECT.to_string())
-      }
-    }
-
-    #[tokio::test]
-    async fn test_location_use_scheduler_hint_and_skip_querying_process() {
-      let mut locate = Locate {
-        gateway: MockGatewayUseSchedulerHintAndSkipQueryingProcess,
-        cache: MockCacheUseSchedulerHintAndSkipQueryingProcess,
-        follow_redirects: true,
-        check_for_redirect: MockCheckForRedirectUseSchedulerHintAndSkipQueryingProcess
-      };
-      let result = locate.locate(
-        PROCESS, 
-        Some(SCHEDULER)
-      ).await;
-      let result = result.unwrap();
-      assert!(result.url == DOMAIN_REDIRECT && result.address == SCHEDULER);
-    }
-
-    struct MockGatewayUseSchedulerHintAndCachedOwner;
-    #[async_trait]
-    impl GatewayMaker for MockGatewayUseSchedulerHintAndCachedOwner {
-      async fn load_process_scheduler<'a>(&self, _process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
-        panic!("should not load process if given a scheduler hint");
-      }
-      async fn load_scheduler<'a>(&self, _scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>  {
-          panic!("should not load the scheduler if cached");
-      }
-    }
-
-    struct MockCacheUseSchedulerHintAndCachedOwner;
-    #[async_trait]
-    impl Cacher for MockCacheUseSchedulerHintAndCachedOwner {
-      async fn get_by_process_with(&mut self, process: &str) -> Option<UrlOwner> {
-        assert!(process == PROCESS);
-        None
-      }    
-      async fn get_by_owner_with(&mut self, owner: &str) -> Option<UrlOwner> {
-        assert!(owner == SCHEDULER);
-        Some(UrlOwner { url: DOMAIN.to_string(), address: SCHEDULER.to_string() })
-      }    
-      async fn set_by_process_with(&mut self, process_tx_id: &str, value: UrlOwner, _ttl: u64) { 
-        assert!(process_tx_id == PROCESS);
-        assert!(value.url == DOMAIN_REDIRECT);
-        assert!(value.address == SCHEDULER);
-      }    
-      async fn set_by_owner_with(&mut self, _owner: &str, _url: &str, _ttl: u64) {
-        panic!("should not cache by owner if cached");
-      }
-    }
-
-    struct MockCheckForRedirectUseSchedulerHintAndCachedOwner;
-    #[async_trait]
-    impl CheckForRedirectMaker for MockCheckForRedirectUseSchedulerHintAndCachedOwner {
-      async fn check_for_redirect_with(&self, url: &str, process: &str) -> Result<String, SchedulerErrors> {
-        assert!(process == PROCESS);
-        assert!(url == DOMAIN);
-        println!("runn");
-        Ok(DOMAIN_REDIRECT.to_string())
-      }
-    }
-
-    #[tokio::test]
-    async fn test_location_use_scheduler_hint_and_cached_owner() {
-      let mut locate = Locate {
-        gateway: MockGatewayUseSchedulerHintAndCachedOwner,
-        cache: MockCacheUseSchedulerHintAndCachedOwner,
-        follow_redirects: true,
-        check_for_redirect: MockCheckForRedirectUseSchedulerHintAndCachedOwner
-      };
-      let result = locate.locate(
-        PROCESS, 
-        Some(SCHEDULER)
-      ).await;
-      let result = result.unwrap();
-      assert!(result.url == DOMAIN && result.address == SCHEDULER);
     }
   }

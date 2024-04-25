@@ -5,6 +5,7 @@ use ao_common::network::utils::get_content_type_headers;
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::Serialize;
+use crate::dal::{LoadProcessSchedulerSchema, LoadSchedulerSchema};
 use crate::err::SchedulerErrors;
 use log::error;
 
@@ -68,60 +69,8 @@ impl Gateway {
     }    
 }
 
-#[async_trait]
-pub trait GatewayMaker {
-    async fn load_process_scheduler<'a>(&self, process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors>;
-    async fn load_scheduler<'a>(&self, scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>;
-}
-
-#[async_trait]
-impl GatewayMaker for Gateway {
-    async fn load_process_scheduler<'a>(&self, process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
-        #[allow(non_snake_case)]
-        let GET_TRANSACTIONS_QUERY = r#"
-            query GetTransactions ($transactionIds: [ID!]!) {
-            transactions(ids: $transactionIds) {
-                edges {
-                node {
-                    tags {
-                    name
-                    value
-                    }
-                }
-                }
-            }
-            }
-        "#;
-
-        let result = self.gateway_with::<TransactionIds, TransactionConnectionSchema>(
-            GET_TRANSACTIONS_QUERY, 
-            TransactionIds { transaction_ids: vec![process_tx_id] }
-        ).await;
-        match result {
-            Ok(tx) => {
-                let node: Option<Node> = if tx.data.transactions.edges.is_empty() { None } else { Some(tx.data.transactions.edges[0].node.clone()) };
-                let tags = Gateway::find_transaction_tags("Process ${process} was not found on gateway ${GATEWAY_URL}", &node);
-                match tags {
-                    Ok(tags) => {
-                        let tag_val = Gateway::find_tag_value(SCHEDULER_TAG, &tags);
-                        if tag_val.is_empty() {
-                            let error = SchedulerErrors::new_tag_not_found("No 'Scheduler' tag found on process".to_string());
-                            return Err(error);
-                        }
-                        let load_scheduler = self.load_scheduler(&tag_val).await;
-                        match load_scheduler {
-                            Ok(res) => Ok(res),
-                            Err(e) => Err(e)
-                        }
-                    },
-                    Err(e) => Err(e)
-                }
-            },
-            Err(e) => Err(SchedulerErrors::Network(Some(Box::new(e))))
-        }
-    }
-
-    async fn load_scheduler<'a>(&self, scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
+impl LoadSchedulerSchema for Gateway {
+    async fn load_scheduler(&self, scheduler_wallet_address: &str) -> Result<SchedulerResult, SchedulerErrors> {
         #[allow(non_snake_case)]
         let GET_SCHEDULER_LOCATION = r#"
             query GetSchedulerLocation ($owner: String!) {
@@ -184,6 +133,54 @@ impl GatewayMaker for Gateway {
             }
         }
     }
+}
+
+#[async_trait]
+impl LoadProcessSchedulerSchema for Gateway {
+    async fn load_process_scheduler(&self, process_tx_id: &str) -> Result<SchedulerResult, SchedulerErrors> {
+        #[allow(non_snake_case)]
+        let GET_TRANSACTIONS_QUERY = r#"
+            query GetTransactions ($transactionIds: [ID!]!) {
+            transactions(ids: $transactionIds) {
+                edges {
+                node {
+                    tags {
+                    name
+                    value
+                    }
+                }
+                }
+            }
+            }
+        "#;
+
+        let result = self.gateway_with::<TransactionIds, TransactionConnectionSchema>(
+            GET_TRANSACTIONS_QUERY, 
+            TransactionIds { transaction_ids: vec![process_tx_id] }
+        ).await;
+        match result {
+            Ok(tx) => {
+                let node: Option<Node> = if tx.data.transactions.edges.is_empty() { None } else { Some(tx.data.transactions.edges[0].node.clone()) };
+                let tags = Gateway::find_transaction_tags("Process ${process} was not found on gateway ${GATEWAY_URL}", &node);
+                match tags {
+                    Ok(tags) => {
+                        let tag_val = Gateway::find_tag_value(SCHEDULER_TAG, &tags);
+                        if tag_val.is_empty() {
+                            let error = SchedulerErrors::new_tag_not_found("No 'Scheduler' tag found on process".to_string());
+                            return Err(error);
+                        }
+                        let load_scheduler = self.load_scheduler(&tag_val).await;
+                        match load_scheduler {
+                            Ok(res) => Ok(res),
+                            Err(e) => Err(e)
+                        }
+                    },
+                    Err(e) => Err(e)
+                }
+            },
+            Err(e) => Err(SchedulerErrors::Network(Some(Box::new(e))))
+        }
+    }    
 }
 
 

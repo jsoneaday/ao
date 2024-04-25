@@ -33,14 +33,14 @@ where
     * @returns {{ url: string } | None >} whether the wallet address is Scheduler
     */
     async fn raw(&mut self, address: &str) -> Result<Option<SchedulerLocation>, SchedulerErrors> {
-        let result = self.cache.get_by_owner_with(address).await;
+        let result = self.cache.get_by_owner(address).await;
         if let Some(result) = result {
             return Ok(Some(SchedulerLocation { url: result.url }))
         }
 
         match self.gateway.load_scheduler(address).await  {
             Ok(sched) => {
-                self.cache.set_by_owner_with(address, &sched.url, sched.ttl).await;
+                self.cache.set_by_owner(address, &sched.url, sched.ttl).await;
                 Ok(Some(SchedulerLocation { url: sched.url }))
             },
             Err(e) => {
@@ -72,16 +72,16 @@ mod tests {
     struct MockCacheRawFound;
     #[async_trait]
     impl Cacher for MockCacheRawFound {
-        async fn get_by_owner_with(&mut self, scheduler: &str) -> Option<UrlOwner> {
+        async fn get_by_owner(&mut self, scheduler: &str) -> Option<UrlOwner> {
             assert!(scheduler == SCHEDULER);
             None
         }
-        async fn get_by_process_with(&mut self, _process: &str) -> Option<UrlOwner> {
+        async fn get_by_process(&mut self, _process: &str) -> Option<UrlOwner> {
             unimplemented!()
         }
-        async fn set_by_process_with(&mut self, _process_tx_id: &str, _value: UrlOwner, _ttl: u64) { unimplemented!() }    
+        async fn set_by_process(&mut self, _process_tx_id: &str, _value: UrlOwner, _ttl: u64) { unimplemented!() }    
     
-        async fn set_by_owner_with(&mut self, owner: &str, url: &str, ttl: u64) {
+        async fn set_by_owner(&mut self, owner: &str, url: &str, ttl: u64) {
             assert!(owner == SCHEDULER);
             assert!(url == DOMAIN);
             assert!(ttl == TEN_MS);
@@ -115,16 +115,16 @@ mod tests {
     struct MockCacheRawNotFound;
     #[async_trait]
     impl Cacher for MockCacheRawNotFound {
-        async fn get_by_owner_with(&mut self, scheduler: &str) -> Option<UrlOwner> {
+        async fn get_by_owner(&mut self, scheduler: &str) -> Option<UrlOwner> {
             assert!(scheduler == SCHEDULER);
             None
         }
-        async fn get_by_process_with(&mut self, _process: &str) -> Option<UrlOwner> {
+        async fn get_by_process(&mut self, _process: &str) -> Option<UrlOwner> {
             unimplemented!()
         }
-        async fn set_by_process_with(&mut self, _process_tx_id: &str, _value: UrlOwner, _ttl: u64) { unimplemented!() }    
+        async fn set_by_process(&mut self, _process_tx_id: &str, _value: UrlOwner, _ttl: u64) { unimplemented!() }    
     
-        async fn set_by_owner_with(&mut self, _owner: &str, _url: &str, _ttl: u64) { unimplemented!() }
+        async fn set_by_owner(&mut self, _owner: &str, _url: &str, _ttl: u64) { unimplemented!() }
     }
 
     struct MockGatewayRawNotFound;
@@ -152,16 +152,16 @@ mod tests {
     struct MockCacheRawUseCachedValue;
     #[async_trait]
     impl Cacher for MockCacheRawUseCachedValue {
-        async fn get_by_owner_with(&mut self, wallet_address: &str) -> Option<UrlOwner> {
+        async fn get_by_owner(&mut self, wallet_address: &str) -> Option<UrlOwner> {
             assert!(wallet_address == SCHEDULER);
             Some(UrlOwner { url: DOMAIN.to_string(), address: SCHEDULER.to_string() })
         }
-        async fn get_by_process_with(&mut self, _process: &str) -> Option<UrlOwner> {
+        async fn get_by_process(&mut self, _process: &str) -> Option<UrlOwner> {
             unimplemented!()
         }
-        async fn set_by_process_with(&mut self, _process_tx_id: &str, _value: UrlOwner, _ttl: u64) { unimplemented!() }    
+        async fn set_by_process(&mut self, _process_tx_id: &str, _value: UrlOwner, _ttl: u64) { unimplemented!() }    
     
-        async fn set_by_owner_with(&mut self, _owner: &str, _url: &str, _ttl: u64) { unimplemented!() }
+        async fn set_by_owner(&mut self, _owner: &str, _url: &str, _ttl: u64) { unimplemented!() }
     }
 
     struct MockGatewayRawUseCachedValue;

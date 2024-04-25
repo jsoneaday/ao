@@ -1,18 +1,13 @@
 use url::Url;
-use crate::err::SchedulerErrors;
+use crate::{dal::CheckForRedirectSchema, err::SchedulerErrors};
 use reqwest::Client;
 use async_trait::async_trait;
 
 pub struct CheckForRedirect;
 
 #[async_trait]
-pub trait CheckForRedirectMaker {
-    async fn check_for_redirect_with (&self, url: &str, process: &str) -> Result<String, SchedulerErrors>;
-}
-
-#[async_trait]
-impl CheckForRedirectMaker for CheckForRedirect {
-    async fn check_for_redirect_with (&self, url: &str, process: &str) -> Result<String, SchedulerErrors> {
+impl CheckForRedirectSchema for CheckForRedirect {
+    async fn check_for_redirect(&self, url: &str, process: &str) -> Result<String, SchedulerErrors> {
         let client = Client::builder().redirect(reqwest::redirect::Policy::none()).build().unwrap();
         
         // In an HTTP redirect the Location header is the new url

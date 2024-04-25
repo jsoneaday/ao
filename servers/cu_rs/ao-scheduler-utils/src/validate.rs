@@ -32,14 +32,14 @@ where
    * @returns {<boolean>} whether the wallet address is Scheduler
    */
     async fn validate(&mut self, address: &str) -> Result<bool, SchedulerErrors> {
-        let cached = self.cache.get_by_owner_with(address).await;
+        let cached = self.cache.get_by_owner(address).await;
         if let Some(_) = cached {
             return Ok(true);
         }
     
         match self.gateway.load_scheduler(address).await {
             Ok(sched) => {
-                self.cache.set_by_owner_with(address, &sched.url, sched.ttl).await;
+                self.cache.set_by_owner(address, &sched.url, sched.ttl).await;
                 return Ok(true);
             },
             Err(e) => {
@@ -65,16 +65,16 @@ mod tests {
     pub struct MockLruCacheForIsValid;
     #[async_trait]
     impl Cacher for MockLruCacheForIsValid {
-        async fn get_by_owner_with(&mut self, scheduler: &str) -> Option<UrlOwner> {
+        async fn get_by_owner(&mut self, scheduler: &str) -> Option<UrlOwner> {
             assert!(scheduler == SCHEDULER);
             None
         }    
-        async fn get_by_process_with(&mut self, _process: &str) -> Option<UrlOwner> {
+        async fn get_by_process(&mut self, _process: &str) -> Option<UrlOwner> {
             unimplemented!()
         }   
-        async fn set_by_process_with(&mut self, _process_tx_id: &str, _value: UrlOwner, _ttl: u64) { unimplemented!() }    
+        async fn set_by_process(&mut self, _process_tx_id: &str, _value: UrlOwner, _ttl: u64) { unimplemented!() }    
     
-        async fn set_by_owner_with(&mut self, owner: &str, url: &str, ttl: u64) {
+        async fn set_by_owner(&mut self, owner: &str, url: &str, ttl: u64) {
             assert!(owner == SCHEDULER);
             assert!(url == DOMAIN);
             assert!(ttl == TEN_MS);
@@ -129,16 +129,16 @@ mod tests {
     pub struct MockLruCacheForIsFromCache;
     #[async_trait]
     impl Cacher for MockLruCacheForIsFromCache {
-        async fn get_by_owner_with(&mut self, key: &str) -> Option<UrlOwner> {
+        async fn get_by_owner(&mut self, key: &str) -> Option<UrlOwner> {
             assert!(key == SCHEDULER);
             Some(UrlOwner { url: DOMAIN.to_string(), address: SCHEDULER.to_string() })
         }
-        async fn get_by_process_with(&mut self, _process: &str) -> Option<UrlOwner> {
+        async fn get_by_process(&mut self, _process: &str) -> Option<UrlOwner> {
             unimplemented!()
         }   
-        async fn set_by_process_with(&mut self, _process_tx_id: &str, _value: UrlOwner, _ttl: u64) { unimplemented!() }    
+        async fn set_by_process(&mut self, _process_tx_id: &str, _value: UrlOwner, _ttl: u64) { unimplemented!() }    
     
-        async fn set_by_owner_with(&mut self, _owner: &str, _url: &str, _ttl: u64) {
+        async fn set_by_owner(&mut self, _owner: &str, _url: &str, _ttl: u64) {
             unimplemented!()
         }
     }

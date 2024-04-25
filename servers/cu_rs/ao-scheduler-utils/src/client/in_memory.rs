@@ -1,75 +1,62 @@
 use std::time::Duration;
 use async_trait::async_trait;
 use moka::{future::Cache, Expiry};
+use crate::dal::{CacherSchema, ProcessCacheEntry, Scheduler};
 
 /// moka is internally thread safe, but requires cache to be cloned
 #[derive(Clone)]
 #[allow(unused)]
 pub struct LocalLruCache {
-    internal_cache: Cache<String, (Expiration, UrlOwner)>,
+    process_cache: Cache<String, (Expiration, ProcessCacheEntry)>,
+    owner_cache: Cache<String, (Expiration, Scheduler)>
 }
 
 impl LocalLruCache {
     pub fn new(size: u64) -> Self {
         Self {
-            internal_cache: Cache::builder()
+            process_cache: Cache::builder()
                 .max_capacity(size)
-                .expire_after(CacheExpiry)
+                .expire_after(ProcessCacheExpiry)
+                .build(),
+            owner_cache: Cache::builder()
+                .max_capacity(size)
+                .expire_after(OwnerCacheExpiry)
                 .build()
         }
-    }    
+    }
+}
 
-    /// Key can be process tx id or owner address
-    async fn get_by_key_with(&mut self, key: &str) -> Option<UrlOwner> {
-        let result = self.internal_cache.get(key).await;
+#[async_trait]
+impl CacherSchema for LocalLruCache {    
+    async fn get_by_process(&mut self, process: &str) -> Option<ProcessCacheEntry> {
+        let result = self.process_cache.get(process).await;
         if let Some(result) = result {
             return Some(result.1);
         }
         None
     }
-}
 
-/// ttl: milliseconds
-#[async_trait]
-pub trait Cacher {        
-    async fn get_by_process_with(&mut self, key: &str) -> Option<UrlOwner>;
-    async fn get_by_owner_with(&mut self, key: &str) -> Option<UrlOwner>;
-    async fn set_by_process_with(&mut self, process_tx_id: &str, value: UrlOwner, ttl: u64);
-    async fn set_by_owner_with(&mut self, owner: &str, url: &str, ttl: u64);
-}
-
-#[async_trait]
-impl Cacher for LocalLruCache {    
-    async fn get_by_process_with(&mut self, process: &str) -> Option<UrlOwner> {
-        self.get_by_key_with(process).await
-    }
-
-    async fn get_by_owner_with(&mut self, owner: &str) -> Option<UrlOwner> {
-        self.get_by_key_with(owner).await
-    }
-    
-    async fn set_by_process_with(&mut self, process_tx_id: &str, value: UrlOwner, ttl: u64) {
-        self.internal_cache.get_with(process_tx_id.to_string(), async {(
+    async fn set_by_process(&mut self, process: &str, process_cache: ProcessCacheEntry, ttl: u64) {
+        self.process_cache.get_with(process.to_string(), async {(
             get_expiration_from_ms(ttl), 
-            value
+            process_cache
         )}).await;
-        //self.internal_cache.insert(process_tx_id.to_string(), value).await;
-    }    
+    }   
 
-    async fn set_by_owner_with(&mut self, owner: &str, url: &str, ttl: u64) {
-        self.internal_cache.get_with(owner.to_string(), async {(
+    async fn get_by_owner(&mut self, owner: &str) -> Option<Scheduler> {
+        let result = self.owner_cache.get(owner).await;
+        if let Some(result) = result {
+            return Some(result.1);
+        }
+        None
+    }     
+
+    async fn set_by_owner(&mut self, owner: &str, url: &str, ttl: u64) {
+        self.owner_cache.get_with(owner.to_string(), async {(
             get_expiration_from_ms(ttl), 
-            UrlOwner { url: url.to_string(), address: owner.to_string() }
+            Scheduler { url: url.to_string(), ttl: Some(ttl), address: owner.to_string() }
         )}).await;
-        //self.internal_cache.insert(owner.to_string(), UrlOwner { url: url.to_string(), address: owner.to_string() }).await;
     }
-}
-
-#[derive(Clone, Debug)]
-pub struct UrlOwner {
-    pub url: String,
-    /// Owner address
-    pub address: String
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -92,9 +79,17 @@ impl Expiration {
     }
 }
 
-pub struct CacheExpiry;
-impl Expiry<String, (Expiration, UrlOwner)> for CacheExpiry {
-    fn expire_after_create(&self, _key: &String, value: &(Expiration, UrlOwner), _created_at: std::time::Instant) -> Option<Duration> {
+pub struct ProcessCacheExpiry;
+impl Expiry<String, (Expiration, ProcessCacheEntry)> for ProcessCacheExpiry {
+    fn expire_after_create(&self, _key: &String, value: &(Expiration, ProcessCacheEntry), _created_at: std::time::Instant) -> Option<Duration> {
+        let duration = value.0.as_duration();
+        duration
+    }
+}
+
+pub struct OwnerCacheExpiry;
+impl Expiry<String, (Expiration, Scheduler)> for OwnerCacheExpiry {
+    fn expire_after_create(&self, _key: &String, value: &(Expiration, Scheduler), _created_at: std::time::Instant) -> Option<Duration> {
         let duration = value.0.as_duration();
         duration
     }
@@ -125,20 +120,20 @@ mod tests {
     #[tokio::test]
     async fn test_get_by_process() {
         let mut cache = LocalLruCache::new(SIZE);
-        let internal_cache = cache.clone().internal_cache;
-        internal_cache.insert(PROCESS.to_string(), (get_expiration_from_ms(TEN_MS), UrlOwner { url: DOMAIN.to_string(), address: SCHEDULER.to_string() })).await;
+        let process_cache = cache.clone().process_cache;
+        process_cache.insert(PROCESS.to_string(), (get_expiration_from_ms(TEN_MS), ProcessCacheEntry { url: DOMAIN.to_string(), ttl: None, address: SCHEDULER.to_string() })).await;
 
-        let result = cache.get_by_key_with(PROCESS).await;
+        let result = cache.get_by_process(PROCESS).await;
         assert!(result.clone().unwrap().url == DOMAIN.to_string() && result.unwrap().address == SCHEDULER.to_string());
     }
 
     #[tokio::test]
     async fn test_get_by_owner() {
         let mut cache = LocalLruCache::new(SIZE);
-        let internal_cache = cache.clone().internal_cache;
-        internal_cache.insert(SCHEDULER.to_string(), (get_expiration_from_ms(TEN_MS), UrlOwner { url: DOMAIN.to_string(), address: SCHEDULER.to_string() })).await;
+        let owner_cache = cache.clone().owner_cache;
+        owner_cache.insert(SCHEDULER.to_string(), (get_expiration_from_ms(TEN_MS), Scheduler { url: DOMAIN.to_string(), ttl: None, address: SCHEDULER.to_string() })).await;
 
-        let result = cache.get_by_key_with(SCHEDULER).await;
+        let result = cache.get_by_owner(SCHEDULER).await;
         assert!(result.clone().unwrap().url == DOMAIN.to_string() && result.unwrap().address == SCHEDULER.to_string());
     }
 
@@ -146,19 +141,17 @@ mod tests {
     async fn test_set_by_process() {
         let cache = LocalLruCache::new(SIZE);    
 
-        cache.clone().set_by_process_with(PROCESS, UrlOwner { url: DOMAIN.to_string(), address: SCHEDULER.to_string() }, TEN_MS).await;
+        cache.clone().set_by_process(PROCESS, ProcessCacheEntry { url: DOMAIN.to_string(), ttl: None, address: SCHEDULER.to_string() }, TEN_MS).await;
 
-        let internal_cache = cache.internal_cache;
-        assert!(internal_cache.get(PROCESS).await.is_some());
+        assert!(cache.get_by_process(PROCESS).await.is_some());
     }
 
     #[tokio::test]
     async fn test_set_by_owner() {
         let cache = LocalLruCache::new(SIZE);
 
-        cache.clone().set_by_owner_with(SCHEDULER, DOMAIN, TEN_MS).await;
+        cache.clone().set_by_owner(SCHEDULER, DOMAIN, TEN_MS).await;
 
-        let internal_cache = cache.internal_cache;
-        assert!(internal_cache.get(SCHEDULER).await.is_some());
+        assert!(cache.get_by_owner(SCHEDULER).await.is_some());
     }
 }
