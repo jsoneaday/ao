@@ -11,10 +11,7 @@ impl CheckForRedirectSchema for CheckForRedirect {
         let client = Client::builder().redirect(reqwest::redirect::Policy::none()).build().unwrap();
         
         // In an HTTP redirect the Location header is the new url
-        match client
-            .get(format!("{}?process-id={}", url, process))
-            .send()
-            .await {
+        match client.get(format!("{}?process-id={}", url, process)).send().await {
             Ok(res) => {
                 if let Some(_found) = [301, 302, 307, 308].iter().find(|no| **no == res.status().as_u16()) {
                     if let Some(location) = res.headers().get("Location") {
