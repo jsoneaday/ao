@@ -1,17 +1,16 @@
 use crate::{client::{gateway::Gateway, in_memory::LocalLruCache, scheduler::CheckForRedirect}, locate::Locate, raw::Raw, validate::Validate};
 
-const DEFAULT_GATEWAY_URL: &str = "https://arweave.net";
-const DEFAULT_UPLOADER_URL: &str = "https://up.arweave.net";
+const DEFAULT_GRAPHQL_URL: &str = "https://arweave.net/graphql";
 
 /**
  * @typedef ConnectParams
  * @property {number} [cacheSize] - the size of the internal LRU cache
  * @property {boolean} [followRedirects] - whether to follow redirects and cache that url instead
- * @property {string} [GATEWAY_URL] - the url of the gateway to be used
+ * @property {string} [GRAPHQL_URL] - the url of the gateway to be used
  *
  * Build the apis using the provided configuration. You can currently specify
  *
- * - a GATEWAY_URL. Defaults to https://arweave.net
+ * - a GRAPHQL_URL. Defaults to https://arweave.net/graphql
  * - a cache size for the internal LRU cache. Defaults to 100
  * - whether or not to follow redirects when locating a scheduler. Defaults to false
  *
@@ -21,27 +20,31 @@ const DEFAULT_UPLOADER_URL: &str = "https://up.arweave.net";
  *
  * @param {ConnectParams} [params]
  */
-pub fn connect(cache_size: u64, gateway_url: Option<&str>, uploader_url: Option<&str>, follow_redirects: Option<bool>) -> ConnectReturn {
-    let _gateway_url = if let Some(gateway_url) = gateway_url { 
+pub fn connect(cache_size: Option<u64>, graphql_url: Option<&str>, follow_redirects: Option<bool>) -> ConnectReturn {
+    let _cache_size = if let Some(cache_size) = cache_size {
+        cache_size
+    } else {
+        100
+    };
+    let _graphql_url = if let Some(gateway_url) = graphql_url { 
         gateway_url
     } else { 
-        DEFAULT_GATEWAY_URL
-    };
-    let _uploader_url = if let Some(uploader_url) = uploader_url { 
-        uploader_url
-    } else { 
-        DEFAULT_UPLOADER_URL
+        DEFAULT_GRAPHQL_URL
     };
     let _follow_redirects = if let Some(follow_redirects) = follow_redirects { follow_redirects } else { false };
 
     let check_for_redirect = CheckForRedirect;
-    let cache = LocalLruCache::new(cache_size);
+    let cache = LocalLruCache::new(_cache_size);
 
-    let locate = Locate::new(Gateway::new(_gateway_url), cache.clone(), _follow_redirects, check_for_redirect);
+    // Locate the scheduler for the given process.
+    let locate = Locate::new(Gateway::new(_graphql_url), Gateway::new(_graphql_url), cache.clone(), _follow_redirects, check_for_redirect);
 
-    let validate = Validate::new(Gateway::new(_gateway_url), cache.clone());
+    // Validate whether the given wallet address is an ao Scheduler
+    let validate = Validate::new(Gateway::new(_graphql_url), cache.clone());
     
-    let raw = Raw::new(Gateway::new(_gateway_url), cache.clone());
+    // Return the `Scheduler-Location` record for the address
+    // or undefined, if it cannot be found
+    let raw = Raw::new(Gateway::new(_graphql_url), cache.clone());
 
     ConnectReturn {
         locate,
@@ -51,7 +54,7 @@ pub fn connect(cache_size: u64, gateway_url: Option<&str>, uploader_url: Option<
 }
 
 pub struct ConnectReturn {
-    pub locate: Locate<LocalLruCache, Gateway, CheckForRedirect>,
+    pub locate: Locate<Gateway, Gateway, LocalLruCache, CheckForRedirect>,
     pub validate: Validate<LocalLruCache, Gateway>,
     pub raw: Raw<LocalLruCache, Gateway>
 }

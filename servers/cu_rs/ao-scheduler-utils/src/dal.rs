@@ -1,12 +1,14 @@
 use async_trait::async_trait;
 use crate::err::SchedulerErrors;
 
+#[derive(Clone, Debug)]
 pub struct ProcessCacheEntry {
     pub url: String,
     pub ttl: Option<u64>,
     pub address: String
 }
 
+#[derive(Clone, Debug)]
 pub struct Scheduler {
     pub url: String,
     pub address: String,

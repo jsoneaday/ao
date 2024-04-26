@@ -20,11 +20,10 @@ pub fn get_connect() -> &'static ConnectReturn {
     CONNECT.get_or_init(|| {
         dotenv::dotenv().ok();
         
+        let graphql_url = std::env::var("GRAPHQL_URL").unwrap();
         let cache_size = std::env::var("SCHEDULER_UTILS_CACHE_SIZE").unwrap_or("10".to_owned()).parse::<u64>().unwrap();
-        let follow_redirects = std::env::var("SCHEDULER_UTILS_FOLLOW_REDIRECTS").unwrap_or("true".to_owned()).parse::<bool>().ok();
-        let gateway = std::env::var("GATEWAY_URL").unwrap();
-        let uploader = std::env::var("UPLOADER_URL").unwrap();
+        let follow_redirects = std::env::var("SCHEDULER_UTILS_FOLLOW_REDIRECTS").unwrap_or("true".to_owned()).parse::<bool>().ok();        
         
-        connect(cache_size, Some(&gateway), Some(&uploader), follow_redirects)
+        connect(Some(cache_size), Some(&graphql_url), follow_redirects)
     })
 }

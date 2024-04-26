@@ -41,7 +41,7 @@ mod tests {
     const REDIRECT_URL: &str = "http://newlocation.com";
 
     #[tokio::test] 
-    async fn test_redirect_check_for_redirect_with() {
+    async fn test_checkforredirect_should_return_new_location_on_redirect() {
         let mut server = Server::new_async().await;
         let url = server.url();
 
@@ -52,13 +52,13 @@ mod tests {
             .with_body("hello world")
             .create();
 
-        let check_redirect = CheckForRedirect;
-        let result = check_redirect.check_for_redirect_with(url.as_str(), "123").await;
+        let check_redirecter = CheckForRedirect;
+        let result = check_redirecter.check_for_redirect(url.as_str(), "123").await;
         assert!(result.unwrap() == REDIRECT_URL.to_string());
     }
 
     #[tokio::test]
-    async fn test_noredirect_check_for_redirect_with() {
+    async fn test_checkforredirect_should_return_original_url_if_no_redirect() {
         let mut server = Server::new_async().await;
         let url = server.url();
 
@@ -69,7 +69,7 @@ mod tests {
             .create();
 
         let check_redirect = CheckForRedirect;
-        let result = check_redirect.check_for_redirect_with(url.as_str(), "123").await;
+        let result = check_redirect.check_for_redirect(url.as_str(), "123").await;
         assert!(result.unwrap() == url);
     }
 }

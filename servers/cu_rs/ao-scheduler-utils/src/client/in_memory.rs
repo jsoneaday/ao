@@ -54,7 +54,7 @@ impl CacherSchema for LocalLruCache {
     async fn set_by_owner(&mut self, owner: &str, url: &str, ttl: u64) {
         self.owner_cache.get_with(owner.to_string(), async {(
             get_expiration_from_ms(ttl), 
-            Scheduler { url: url.to_string(), ttl: Some(ttl), address: owner.to_string() }
+            Scheduler { url: url.to_string(), ttl: ttl, address: owner.to_string() }
         )}).await;
     }
 }
@@ -131,7 +131,7 @@ mod tests {
     async fn test_get_by_owner() {
         let mut cache = LocalLruCache::new(SIZE);
         let owner_cache = cache.clone().owner_cache;
-        owner_cache.insert(SCHEDULER.to_string(), (get_expiration_from_ms(TEN_MS), Scheduler { url: DOMAIN.to_string(), ttl: None, address: SCHEDULER.to_string() })).await;
+        owner_cache.insert(SCHEDULER.to_string(), (get_expiration_from_ms(TEN_MS), Scheduler { url: DOMAIN.to_string(), ttl: TEN_MS, address: SCHEDULER.to_string() })).await;
 
         let result = cache.get_by_owner(SCHEDULER).await;
         assert!(result.clone().unwrap().url == DOMAIN.to_string() && result.unwrap().address == SCHEDULER.to_string());
@@ -139,7 +139,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_set_by_process() {
-        let cache = LocalLruCache::new(SIZE);    
+        let mut cache = LocalLruCache::new(SIZE);    
 
         cache.clone().set_by_process(PROCESS, ProcessCacheEntry { url: DOMAIN.to_string(), ttl: None, address: SCHEDULER.to_string() }, TEN_MS).await;
 
@@ -148,7 +148,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_set_by_owner() {
-        let cache = LocalLruCache::new(SIZE);
+        let mut cache = LocalLruCache::new(SIZE);
 
         cache.clone().set_by_owner(SCHEDULER, DOMAIN, TEN_MS).await;
 

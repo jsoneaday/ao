@@ -1,15 +1,17 @@
-use crate::{client::{gateway::GatewayMaker, in_memory::Cacher}, err::SchedulerErrors};
+use crate::err::SchedulerErrors;
+use crate::dal::{CacherSchema, LoadSchedulerSchema};
 use async_trait::async_trait;
+use std::marker::{Send, Sync};
 
-pub struct Validate<C: Cacher, G: GatewayMaker> {
-    gateway: G,
+pub struct Validate<C: CacherSchema, LS: LoadSchedulerSchema> {
+    loader: LS,
     cache: C
 }
 
-impl<C: Cacher, G: GatewayMaker> Validate<C, G> {
-    pub fn new(gateway: G, cache: C) -> Self {
+impl<C: CacherSchema, LS: LoadSchedulerSchema> Validate<C, LS> {
+    pub fn new(loader: LS, cache: C) -> Self {
         Self {
-            gateway,
+            loader,
             cache
         }
     }
@@ -21,10 +23,10 @@ pub trait ValidateMaker {
 }
 
 #[async_trait]
-impl<C, G> ValidateMaker for Validate<C, G>
+impl<C, LS> ValidateMaker for Validate<C, LS>
 where 
-    C: Cacher + std::marker::Send + std::marker::Sync,
-    G: GatewayMaker + std::marker::Send + std::marker::Sync {
+    C: CacherSchema + Send + Sync,
+    LS: LoadSchedulerSchema + Send + Sync {
     /**
    * Validate whether the given wallet address is an ao Scheduler
    *
@@ -37,7 +39,7 @@ where
             return Ok(true);
         }
     
-        match self.gateway.load_scheduler(address).await {
+        match self.loader.load_scheduler(address).await {
             Ok(sched) => {
                 self.cache.set_by_owner(address, &sched.url, sched.ttl).await;
                 return Ok(true);
@@ -54,7 +56,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::client::{gateway::SchedulerResult, in_memory::UrlOwner};
+    use crate::dal::{Scheduler, ProcessCacheEntry};
     use super::*;
     use async_trait::async_trait;
 
@@ -62,104 +64,111 @@ mod tests {
     const DOMAIN: &str = "https://foo.bar";
     const TEN_MS: u64 = 10;
 
-    pub struct MockLruCacheForIsValid;
-    #[async_trait]
-    impl Cacher for MockLruCacheForIsValid {
-        async fn get_by_owner(&mut self, scheduler: &str) -> Option<UrlOwner> {
-            assert!(scheduler == SCHEDULER);
-            None
-        }    
-        async fn get_by_process(&mut self, _process: &str) -> Option<UrlOwner> {
-            unimplemented!()
-        }   
-        async fn set_by_process(&mut self, _process_tx_id: &str, _value: UrlOwner, _ttl: u64) { unimplemented!() }    
-    
-        async fn set_by_owner(&mut self, owner: &str, url: &str, ttl: u64) {
-            assert!(owner == SCHEDULER);
-            assert!(url == DOMAIN);
-            assert!(ttl == TEN_MS);
-        }
-    }
-    pub struct MockGatewayForIsValid;
-    #[async_trait]
-    impl GatewayMaker for MockGatewayForIsValid {
-        async fn load_process_scheduler<'a>(&self, _process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
-            unimplemented!()
-        }
-        async fn load_scheduler<'a>(&self, scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>  {
-            assert!(scheduler_wallet_address == SCHEDULER);
-            Ok(SchedulerResult {
-                url: DOMAIN.to_string(), ttl: TEN_MS, owner: SCHEDULER.to_string()
-            })
-        }
-    }
+    mod should_validate_whether_the_wallet_address_owns_a_valid_scheduler_location {
+        use super::*;
 
-    #[tokio::test]
-    async fn test_validate_with_is_valid() {
-        let mut validate = Validate {
-            gateway: MockGatewayForIsValid,
-            cache: MockLruCacheForIsValid
-        };
-        let result = validate.validate(SCHEDULER).await;
-        assert!(result.is_ok());
-    }
+        pub struct MockLruCacheForIsValid;
+        #[async_trait]
+        impl CacherSchema for MockLruCacheForIsValid {
+            async fn get_by_owner(&mut self, scheduler: &str) -> Option<Scheduler> {
+                assert!(scheduler == SCHEDULER);
+                None
+            }    
+            async fn get_by_process(&mut self, _process: &str) -> Option<ProcessCacheEntry> {
+                unimplemented!()
+            }   
+            async fn set_by_process(&mut self, _process_tx_id: &str, _value: ProcessCacheEntry, _ttl: u64) { unimplemented!() }    
+        
+            async fn set_by_owner(&mut self, owner: &str, url: &str, ttl: u64) {
+                assert!(owner == SCHEDULER);
+                assert!(url == DOMAIN);
+                assert!(ttl == TEN_MS);
+            }
+        }
 
-    pub struct MockGatewayForIsNotValid;
-    #[async_trait]
-    impl GatewayMaker for MockGatewayForIsNotValid {
-        async fn load_process_scheduler<'a>(&self, _process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
-            unimplemented!()
-        }
-        async fn load_scheduler<'a>(&self, scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>  {
-            assert!(scheduler_wallet_address == SCHEDULER);
-            Err(SchedulerErrors::new_invalid_scheduler_location("Big womp".to_string()))
-        }
-    }
+        mod valid {
+            use super::*;
+            
+            pub struct MockLoadScheduler;
+            #[async_trait]
+            impl LoadSchedulerSchema for MockLoadScheduler {
+                async fn load_scheduler(&self, scheduler_wallet_address: &str) -> Result<Scheduler, SchedulerErrors>  {
+                    assert!(scheduler_wallet_address == SCHEDULER);
+                    Ok(Scheduler {
+                        url: DOMAIN.to_string(), ttl: TEN_MS, address: SCHEDULER.to_string()
+                    })
+                }
+            }
 
-    #[tokio::test]
-    async fn test_validate_with_is_not_valid() {
-        let mut validate = Validate {
-            gateway: MockGatewayForIsNotValid,
-            cache: MockLruCacheForIsValid
-        };
-        let result = validate.validate(SCHEDULER).await;
-        assert!(result.ok().unwrap() == false);
-    }
+            #[tokio::test]
+            async fn test_validate_with_is_valid() {
+                let mut validater = Validate {
+                    loader: MockLoadScheduler,
+                    cache: MockLruCacheForIsValid
+                };
+                let result = validater.validate(SCHEDULER).await;
+                assert!(result.is_ok());
+            }
+        }
 
-    pub struct MockLruCacheForIsFromCache;
-    #[async_trait]
-    impl Cacher for MockLruCacheForIsFromCache {
-        async fn get_by_owner(&mut self, key: &str) -> Option<UrlOwner> {
-            assert!(key == SCHEDULER);
-            Some(UrlOwner { url: DOMAIN.to_string(), address: SCHEDULER.to_string() })
-        }
-        async fn get_by_process(&mut self, _process: &str) -> Option<UrlOwner> {
-            unimplemented!()
-        }   
-        async fn set_by_process(&mut self, _process_tx_id: &str, _value: UrlOwner, _ttl: u64) { unimplemented!() }    
-    
-        async fn set_by_owner(&mut self, _owner: &str, _url: &str, _ttl: u64) {
-            unimplemented!()
-        }
-    }
-    pub struct MockGatewayForIsFromCache;
-    #[async_trait]
-    impl GatewayMaker for MockGatewayForIsFromCache {
-        async fn load_process_scheduler<'a>(&self,  _process_tx_id: &'a str) -> Result<SchedulerResult, SchedulerErrors> {
-            unimplemented!()
-        }
-        async fn load_scheduler<'a>(&self, _scheduler_wallet_address: &'a str) -> Result<SchedulerResult, SchedulerErrors>  {
-            panic!("should never call on chain if in cache")
-        }
-    }
+        mod not_valid {
+            use super::*;
+            pub struct MockLoadScheduler;
+            #[async_trait]
+            impl LoadSchedulerSchema for MockLoadScheduler {
+                async fn load_scheduler(&self, scheduler_wallet_address: &str) -> Result<Scheduler, SchedulerErrors>  {
+                    assert!(scheduler_wallet_address == SCHEDULER);
+                    Err(SchedulerErrors::new_invalid_scheduler_location("Big womp".to_string()))
+                }
+            }
 
-    #[tokio::test]
-    async fn test_validate_with_is_from_cache() {
-        let mut validate = Validate {
-            gateway: MockGatewayForIsFromCache,
-            cache: MockLruCacheForIsFromCache
-        };
-        let result = validate.validate(SCHEDULER).await;
-        assert!(result.ok().unwrap() == true);
+            #[tokio::test]
+            async fn test_validate_with_is_not_valid() {
+                let mut validater = Validate {
+                    loader: MockLoadScheduler,
+                    cache: MockLruCacheForIsValid
+                };
+                let result = validater.validate(SCHEDULER).await;
+                assert!(result.ok().unwrap() == false);
+            }
+        }
+
+        mod should_use_the_cached_value {
+            use super::*;
+
+            pub struct MockLruCacheForIsFromCache;
+            #[async_trait]
+            impl CacherSchema for MockLruCacheForIsFromCache {
+                async fn get_by_owner(&mut self, key: &str) -> Option<Scheduler> {
+                    assert!(key == SCHEDULER);
+                    Some(Scheduler { url: DOMAIN.to_string(), ttl: TEN_MS, address: SCHEDULER.to_string() })
+                }
+                async fn get_by_process(&mut self, _process: &str) -> Option<ProcessCacheEntry> {
+                    unimplemented!()
+                }   
+                async fn set_by_process(&mut self, _process_tx_id: &str, _value: ProcessCacheEntry, _ttl: u64) { unimplemented!() }    
+            
+                async fn set_by_owner(&mut self, _owner: &str, _url: &str, _ttl: u64) {
+                    unimplemented!("should not call if not scheduler is in cache")
+                }
+            }
+            pub struct MockLoadScheduler;
+            #[async_trait]
+            impl LoadSchedulerSchema for MockLoadScheduler {
+                async fn load_scheduler(&self, _scheduler_wallet_address: &str) -> Result<Scheduler, SchedulerErrors>  {
+                    panic!("should never call on chain if in cache")
+                }
+            }
+
+            #[tokio::test]
+            async fn test_validate_with_is_from_cache() {
+                let mut validater = Validate {
+                    loader: MockLoadScheduler,
+                    cache: MockLruCacheForIsFromCache
+                };
+                let result = validater.validate(SCHEDULER).await;
+                assert!(result.ok().unwrap() == true);
+            }
+        }
     }
 }

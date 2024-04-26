@@ -4,14 +4,14 @@ use async_trait::async_trait;
 use std::marker::{Send, Sync};
 
 pub struct Raw<C, LS> {
-    load_scheduler: LS,
+    loader: LS,
     cache: C
 }
 
 impl<C: CacherSchema, LS: LoadSchedulerSchema> Raw<C, LS> {
     pub fn new(load_scheduler: LS, cache: C) -> Self {
         Self {
-            load_scheduler,
+            loader: load_scheduler,
             cache
         }
     }
@@ -40,7 +40,7 @@ where
             return Ok(Some(SchedulerLocation { url: result.url }));
         }
 
-        match self.load_scheduler.load_scheduler(address).await  {
+        match self.loader.load_scheduler(address).await  {
             Ok(sched) => {
                 self.cache.set_by_owner(address, &sched.url, sched.ttl).await;
                 Ok(Some(SchedulerLocation { url: sched.url }))
@@ -107,7 +107,7 @@ mod tests {
         #[tokio::test]
         async fn test_raw_found() {
             let mut raw = Raw {
-                load_scheduler: MockLoadScheduler,
+                loader: MockLoadScheduler,
                 cache: MockCacheRawFound
             };
             let result = raw.raw(SCHEDULER).await;
@@ -145,7 +145,7 @@ mod tests {
         #[tokio::test]
         async fn test_raw_not_found() {
             let mut raw = Raw {
-                load_scheduler: MockLoadScheduler,
+                loader: MockLoadScheduler,
                 cache: MockCacheRawNotFound
             };
             let result = raw.raw(SCHEDULER).await;
@@ -182,7 +182,7 @@ mod tests {
         #[tokio::test]
         async fn test_raw_use_cached_value() {
             let mut raw = Raw {
-                load_scheduler: MockLoadScheduler,
+                loader: MockLoadScheduler,
                 cache: MockCacheRawUseCachedValue
             };
             let result = raw.raw(SCHEDULER).await;
