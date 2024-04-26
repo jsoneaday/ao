@@ -12,6 +12,45 @@ use log::error;
 const URL_TAG: &str = "Url";
 const TTL_TAG: &str = "Time-To-Live";
 const SCHEDULER_TAG: &str = "Scheduler";
+#[allow(non_snake_case)]
+const GET_TRANSACTIONS_QUERY: &str = r#"
+    query GetTransactions ($transactionIds: [ID!]!) {
+        transactions(ids: $transactionIds) {
+            edges {
+                node {
+                    tags {
+                        name
+                        value
+                    }
+                }
+            }
+        }
+    }
+"#;
+#[allow(non_snake_case)]
+const GET_SCHEDULER_LOCATION: &str = r#"
+    query GetSchedulerLocation ($owner: String!) {
+        transactions (
+            owners: [$owner]
+            tags: [
+                { name: "Data-Protocol", values: ["ao"] },
+                { name: "Type", values: ["Scheduler-Location"] }
+            ]
+            # Only need the most recent Scheduler-Location
+            sort: HEIGHT_DESC
+            first: 1
+        ) {
+            edges {
+                node {
+                    tags {
+                        name
+                        value
+                    }
+                }
+            }
+        }
+    }
+"#;
 
 pub struct Gateway {
     client: Client,
@@ -72,22 +111,6 @@ impl Gateway {
 #[async_trait]
 impl LoadProcessSchedulerSchema for Gateway {
     async fn load_process_scheduler(&self, process_tx_id: &str) -> Result<Scheduler, SchedulerErrors> {
-        #[allow(non_snake_case)]
-        let GET_TRANSACTIONS_QUERY = r#"
-            query GetTransactions ($transactionIds: [ID!]!) {
-            transactions(ids: $transactionIds) {
-                edges {
-                node {
-                    tags {
-                    name
-                    value
-                    }
-                }
-                }
-            }
-            }
-        "#;
-
         let result = self.gateway_with::<TransactionIds, TransactionConnectionSchema>(
             GET_TRANSACTIONS_QUERY, 
             TransactionIds { transaction_ids: vec![process_tx_id] }
@@ -120,31 +143,6 @@ impl LoadProcessSchedulerSchema for Gateway {
 #[async_trait]
 impl LoadSchedulerSchema for Gateway {
     async fn load_scheduler(&self, scheduler_wallet_address: &str) -> Result<Scheduler, SchedulerErrors> {
-        #[allow(non_snake_case)]
-        let GET_SCHEDULER_LOCATION = r#"
-            query GetSchedulerLocation ($owner: String!) {
-            transactions (
-                owners: [$owner]
-                tags: [
-                { name: "Data-Protocol", values: ["ao"] },
-                { name: "Type", values: ["Scheduler-Location"] }
-                ]
-                # Only need the most recent Scheduler-Location
-                sort: HEIGHT_DESC
-                first: 1
-            ) {
-                edges {
-                node {
-                    tags {
-                    name
-                    value
-                    }
-                }
-                }
-            }
-            }
-        "#;
-
         let result = self.gateway_with::<WalletAddress, TransactionConnectionSchema>(GET_SCHEDULER_LOCATION, WalletAddress { owner: scheduler_wallet_address }).await;        
         match result {
             Ok(tx) => {
@@ -205,6 +203,7 @@ mod tests {
     const PROCESS: &str = "zc24Wpv_i6NNCEdxeKt7dcNrqL5w0hrShtSCcFGGL24";
     const SCHEDULER: &str = "gnVg6A6S8lfB10P38V7vOia52lEhTX3Uol8kbTGUT8w";
     const TWO_DAYS: u64 = 1000 * 60 * 60 * 48;
+    const FOOBAR_URL: &str = "https://foo.bar";
     
     mod gateway {
         use super::*;
@@ -244,6 +243,14 @@ mod tests {
                 let url = server.url();
 
                 let _mock = server.mock("POST", "/")
+                    .match_body(mockito::Matcher::Json(
+                        serde_json::to_value(
+                            &GraphqlInput {
+                                query: GET_TRANSACTIONS_QUERY.to_string(),
+                                variables: TransactionIds { transaction_ids: vec![PROCESS] }
+                            }
+                        ).unwrap()
+                    ))
                     .with_status(200)
                     .with_body(
                         serde_json::to_string(&Data {
@@ -267,10 +274,46 @@ mod tests {
                     )
                     .create();
 
+                let _mock = server.mock("POST", "/")
+                    .match_body(mockito::Matcher::Json(
+                        serde_json::to_value(
+                            &GraphqlInput {
+                                query: GET_SCHEDULER_LOCATION.to_string(),
+                                variables: WalletAddress { owner: SCHEDULER }
+                            }
+                        ).unwrap()
+                    ))
+                    .with_status(200)
+                    .with_body(
+                        serde_json::to_string(&Data {
+                            data: Transactions {
+                                transactions: Edges {
+                                    edges: vec![
+                                        Node {
+                                            node: Tags {
+                                                tags: vec![
+                                                    Tag { 
+                                                        name: "Url".to_string(), 
+                                                        value: FOOBAR_URL.to_string() 
+                                                    },
+                                                    Tag { 
+                                                        name: "Time-To-Live".to_string(), 
+                                                        value: format!("{}", TWO_DAYS) 
+                                                    }
+                                                ]
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }).unwrap()
+                    )
+                    .create();
+
                 let gateway = Gateway::new(&url);                
                 match gateway.load_process_scheduler(PROCESS).await {
                     Ok(res) => {
-                        assert!(res.url == url);
+                        assert!(res.url == FOOBAR_URL);
                         assert!(res.ttl == TWO_DAYS);
                         assert!(res.address == SCHEDULER);
                     },
