@@ -2,19 +2,24 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+<<<<<<< HEAD
 <!-- toc -->
 
+- [[0.0.28](https://github.com/permaweb/ao/compare/loader@v0.0.27...loader@v0.0.28) (2024-04-22)](#0028httpsgithubcompermawebaocompareloaderv0027loaderv0028-2024-04-22)
+  - [Features](#features)
+- [[0.0.27](https://github.com/permaweb/ao/compare/loader@v0.0.26...loader@v0.0.27) (2024-04-22)](#0027httpsgithubcompermawebaocompareloaderv0026loaderv0027-2024-04-22)
+  - [Features](#features-1)
 - [[0.0.26](https://github.com/permaweb/ao/compare/loader@v0.0.25...loader@v0.0.26) (2024-04-11)](#0026httpsgithubcompermawebaocompareloaderv0025loaderv0026-2024-04-11)
   - [Bug Fixes](#bug-fixes)
 - [[0.0.25](https://github.com/permaweb/ao/compare/loader@v0.0.24...loader@v0.0.25) (2024-04-10)](#0025httpsgithubcompermawebaocompareloaderv0024loaderv0025-2024-04-10)
-  - [Features](#features)
+  - [Features](#features-2)
   - [Bug Fixes](#bug-fixes-1)
 - [[0.0.24](https://github.com/permaweb/ao/compare/loader@v0.0.23...loader@v0.0.24) (2024-04-04)](#0024httpsgithubcompermawebaocompareloaderv0023loaderv0024-2024-04-04)
-  - [Features](#features-1)
-- [[0.0.23](https://github.com/permaweb/ao/compare/loader@v0.0.22...loader@v0.0.23) (2024-03-06)](#0023httpsgithubcompermawebaocompareloaderv0022loaderv0023-2024-03-06)
-  - [Features](#features-2)
-- [[0.0.22](https://github.com/permaweb/ao/compare/loader@v0.0.21...loader@v0.0.22) (2024-02-17)](#0022httpsgithubcompermawebaocompareloaderv0021loaderv0022-2024-02-17)
   - [Features](#features-3)
+- [[0.0.23](https://github.com/permaweb/ao/compare/loader@v0.0.22...loader@v0.0.23) (2024-03-06)](#0023httpsgithubcompermawebaocompareloaderv0022loaderv0023-2024-03-06)
+  - [Features](#features-4)
+- [[0.0.22](https://github.com/permaweb/ao/compare/loader@v0.0.21...loader@v0.0.22) (2024-02-17)](#0022httpsgithubcompermawebaocompareloaderv0021loaderv0022-2024-02-17)
+  - [Features](#features-5)
 - [[0.0.21](https://github.com/permaweb/ao/compare/loader@v0.0.20...loader@v0.0.21) (2024-02-13)](#0021httpsgithubcompermawebaocompareloaderv0020loaderv0021-2024-02-13)
   - [Bug Fixes](#bug-fixes-2)
 - [[0.0.20](https://github.com/permaweb/ao/compare/loader@v0.0.19...loader@v0.0.20) (2024-02-12)](#0020httpsgithubcompermawebaocompareloaderv0019loaderv0020-2024-02-12)
@@ -23,7 +28,7 @@ All notable changes to this project will be documented in this file. See [commit
 - [[0.0.18](https://github.com/permaweb/ao/compare/loader@v0.0.17...loader@v0.0.18) (2024-02-09)](#0018httpsgithubcompermawebaocompareloaderv0017loaderv0018-2024-02-09)
 - [[0.0.17](https://github.com/permaweb/ao/compare/loader@v0.0.15...loader@v0.0.17) (2024-02-06)](#0017httpsgithubcompermawebaocompareloaderv0015loaderv0017-2024-02-06)
 - [[0.0.15](https://github.com/permaweb/ao/compare/loader@v0.0.14...loader@v0.0.15) (2024-02-06)](#0015httpsgithubcompermawebaocompareloaderv0014loaderv0015-2024-02-06)
-  - [Features](#features-4)
+  - [Features](#features-6)
   - [Bug Fixes](#bug-fixes-4)
 - [[0.0.14](https://github.com/permaweb/ao/compare/loader@v0.0.13...loader@v0.0.14) (2024-02-05)](#0014httpsgithubcompermawebaocompareloaderv0013loaderv0014-2024-02-05)
 - [[0.0.13](https://github.com/permaweb/ao/compare/loader@v0.0.12...loader@v0.0.13) (2024-01-08)](#0013httpsgithubcompermawebaocompareloaderv0012loaderv0013-2024-01-08)
@@ -39,16 +44,33 @@ All notable changes to this project will be documented in this file. See [commit
 - [[0.0.6](https://github.com/permaweb/ao/compare/loader@v0.0.5...loader@v0.0.6) (2023-11-08)](#006httpsgithubcompermawebaocompareloaderv005loaderv006-2023-11-08)
   - [Bug Fixes](#bug-fixes-7)
 - [0.0.5 (2023-11-07)](#005-2023-11-07)
-  - [Features](#features-5)
+  - [Features](#features-7)
   - [Bug Fixes](#bug-fixes-8)
 - [0.0.4 (2023-09-20)](#004-2023-09-20)
-  - [Features](#features-6)
+  - [Features](#features-8)
   - [Bug Fixes](#bug-fixes-9)
 - [0.0.4 (2023-09-20)](#004-2023-09-20-1)
-  - [Features](#features-7)
+  - [Features](#features-9)
   - [Bug Fixes](#bug-fixes-10)
 
 <!-- tocstop -->
+=======
+## [0.0.28](https://github.com/permaweb/ao/compare/loader@v0.0.27...loader@v0.0.28) (2024-04-22)
+
+
+### Features
+
+* wip experimental wasm 64 ([1799ae4](https://github.com/permaweb/ao/commit/1799ae417492e0093bb22c083eb75315ddf7334f))
+
+## [0.0.27](https://github.com/permaweb/ao/compare/loader@v0.0.26...loader@v0.0.27) (2024-04-22)
+
+
+### Features
+
+* apply metering to wasm64 modules ([a615396](https://github.com/permaweb/ao/commit/a615396d32160320be112c122e4e77afe95042b4))
+* wasm64 work in progress ([5486f9f](https://github.com/permaweb/ao/commit/5486f9f7783ab1b7bca5c64a6545e76f553bf313))
+* wasm64 working with no metering ([57298d6](https://github.com/permaweb/ao/commit/57298d6706b63e9ae57878c38e767714ec36d8ac))
+>>>>>>> 625347f97a5bc8c4057e4120d7e50543cf099a01
 
 ## [0.0.26](https://github.com/permaweb/ao/compare/loader@v0.0.25...loader@v0.0.26) (2024-04-11)
 

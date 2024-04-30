@@ -2,6 +2,7 @@ mod config;
 mod dal;
 mod utils {
     mod error;
+    pub mod maths;
 }
 pub mod client {
     mod ao_block;
@@ -31,10 +32,10 @@ pub mod model {
 }    
 
 use std::sync::Arc;
-use ao_scheduler_utils::get_connect;
 use ao_common::domain::dal::Log;
 
 pub use crate::domain::model::domain_config_schema::DomainConfigSchema;
+pub use crate::domain::utils::maths;
 use crate::domain::client::arweave::InternalArweave;
 
 #[allow(unused)]

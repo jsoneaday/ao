@@ -26,6 +26,7 @@ pub struct ArweaveGateway {
 }
 
 impl ArweaveGateway {
+    #[allow(unused)]
     pub async fn new() -> Result<Self, String> {
         let network_info = ArweaveGateway::network_info_fetch("cu".to_string()).await?;
 

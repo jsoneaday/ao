@@ -5,6 +5,7 @@ use ao_common::domain::signer::ArweaveSigner;
 use crate::domain::{clients::{gateway::ArweaveGateway, wallet::FileWallet}, config::AoConfig};
 use dotenv::dotenv;
 
+#[allow(unused)]
 pub struct Deps {
     // pub data_store: Arc<dyn DataStore>,
     pub logger: Arc<dyn Log>,
@@ -17,6 +18,7 @@ pub struct Deps {
     // pub scheduler: Arc<scheduler::ProcessScheduler>,
 }
 
+#[allow(unused)]
 pub async fn init_deps(mode: Option<String>) -> Arc<Deps> {
     let logger: Arc<dyn Log> = UnitLog::init();
  
@@ -47,6 +49,7 @@ pub async fn init_deps(mode: Option<String>) -> Arc<Deps> {
     })
 }
 
+#[allow(unused)]
 pub fn init_builder(deps: &Arc<Deps>) -> Result<Builder, String> {
     dotenv().ok();
     let builder = Builder::new(deps.gateway.clone(), deps.signer.clone(), &deps.logger)?;

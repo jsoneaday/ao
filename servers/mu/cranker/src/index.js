@@ -1,6 +1,5 @@
 import fs from 'fs'
 import path from 'path'
-import os from 'os'
 
 import minimist from 'minimist'
 import cron from 'node-cron'
@@ -20,9 +19,9 @@ const apis = createApis({
 const argv = minimist(process.argv.slice(2))
 const processId = argv._[0]
 
-const cursorFilePath = path.join(`${os.tmpdir()}/.${processId}.txt`)
+const cursorFilePath = path.join(`${config.CRON_CURSOR_DIR}/${processId}-cursor.txt`)
 
-let runTimeComplete = false
+const runTimeComplete = false
 
 const getCronString = (hoursToAdd = 0, minutesToAdd = 0) => {
   const now = new Date()
@@ -68,11 +67,6 @@ ct = cron.schedule('*/10 * * * * *', async () => {
       )
     ct.start() // resume cron when done getting messages
   }
-})
-
-cron.schedule(getCronString(12), () => {
-  console.log('12 hours reached, setting runtime to complete')
-  runTimeComplete = true
 })
 
 let isProcessingMessages = false

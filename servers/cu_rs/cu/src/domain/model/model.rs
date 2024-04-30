@@ -27,16 +27,19 @@ pub fn domain_config_schema<'a>(start_schema: StartDomainConfigSchema) -> &'a Re
     })
 }
 
+#[allow(unused)]
 pub struct RawTagSchema {
     name: String,
     value: String
 }
 
+#[allow(unused)]
 pub struct Owner {
     address: String,
     key: String
 }
 
+#[allow(unused)]
 pub struct SimpleModuleSchema {
     id: String,
     /// address
@@ -44,6 +47,7 @@ pub struct SimpleModuleSchema {
     tags: Vec<RawTagSchema>
 }
 
+#[allow(unused)]
 pub struct ModuleSchema {
     id: String,
     owner: Owner,
@@ -51,18 +55,20 @@ pub struct ModuleSchema {
 }
 
 pub struct BlockSchema {
-    height: u64,
-    timestamp: u64
+    pub height: i64,
+    pub timestamp: i64
 }
 
 pub type TimestampSchema = BlockSchema;
 
+#[allow(unused)]
 pub struct MessageMetaSchema {
-    height: u64,
-    timestamp: u64,
-    nonce: u64
+    height: i64,
+    timestamp: i64,
+    nonce: i64
 }
 
+#[allow(unused)]
 pub struct ProcessSchema {
     id: String,
     signature: Option<String>,
@@ -74,6 +80,7 @@ pub struct ProcessSchema {
     block: BlockSchema
 }
 
+#[allow(unused)]
 pub struct ProcessSchemaWithoutId {    
     signature: Option<String>,
     data: Option<Vec<u8>>,
@@ -92,7 +99,7 @@ pub struct Output {
     assignments: Option<Vec<u8>>,
     spawns: Option<Vec<u8>>,
     output: Option<Vec<u8>>,
-    gas_used: Option<u64>,
+    gas_used: Option<i64>,
     error: Option<Vec<u8>>
 }
 
@@ -102,11 +109,11 @@ pub struct EvaluationSchema {
     process_id: String,
     message_id: String,
     deep_hash: String,
-    timestamp: u64,
-    epoch: u64,
-    nonce: u64,
+    timestamp: i64,
+    epoch: i64,
+    nonce: i64,
     ordinate: String,
-    block_height: u64,
+    block_height: i64,
     cron: Option<String>,
     evaluated_at: DateTime<Utc>,
     output: Output
@@ -118,19 +125,20 @@ pub struct EvaluationSchemaExtended {
     process_id: String,
     message_id: String,
     deep_hash: Option<String>,
-    timestamp: u64,
-    epoch: u64,
-    nonce: u64,
+    timestamp: i64,
+    epoch: i64,
+    nonce: i64,
     ordinate: String,
-    block_height: u64,
+    block_height: i64,
     cron: Option<String>,
     evaluated_at: DateTime<Utc>,
     output: Output,
     is_assignment: bool
 }
 
+#[allow(unused)]
 pub struct FromOrToEvaluationSchema {
-    timestamp: Option<u64>,
+    timestamp: Option<i64>,
     ordinate: Option<String>,
     cron: Option<String>
 }
@@ -139,6 +147,7 @@ pub trait StreamSchema {
     fn pipe(&self);
 }
 
+#[allow(unused)]
 pub struct ProcessUrl {
     url: String
 }

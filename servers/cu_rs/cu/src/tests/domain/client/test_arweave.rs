@@ -1,12 +1,12 @@
-use std::path::PathBuf;
-use ao_common::{domain::bytes::DataItem, test_utils::{get_uploader_url, get_wallet_file}};
-use bundlr_sdk::tags::Tag;
-use crate::domain::client::arweave::InternalArweave;
-
-const TEST_IMAGE_FILE: &str = "../test_utils/test.png";
-
 #[tokio::test]
 async fn test_build_sign_dataitem() {        
+    use std::path::PathBuf;
+    use ao_common::test_utils::{get_uploader_url, get_wallet_file};
+    use bundlr_sdk::tags::Tag;
+    use crate::domain::client::arweave::InternalArweave;
+
+    const TEST_IMAGE_FILE: &str = "../test_utils/test.png";
+
     let arweave = InternalArweave::new(get_wallet_file(), get_uploader_url());
     let mut path = PathBuf::new();
     path.push(TEST_IMAGE_FILE);
@@ -24,6 +24,13 @@ async fn test_build_sign_dataitem() {
 
 #[tokio::test]
 async fn test_upload_dataitem() {
+    use std::path::PathBuf;
+    use ao_common::{domain::bytes::DataItem, test_utils::{get_uploader_url, get_wallet_file}};
+    use bundlr_sdk::tags::Tag;
+    use crate::domain::client::arweave::InternalArweave;
+
+    const TEST_IMAGE_FILE: &str = "../test_utils/test.png";
+    
     let arweave = InternalArweave::new(get_wallet_file(), get_uploader_url());
     
     let mut path = PathBuf::new();
