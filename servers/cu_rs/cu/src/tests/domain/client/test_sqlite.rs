@@ -1,16 +1,9 @@
-use std::sync::Arc;
-use ao_common::domain::{dal::Log, UnitLog};
-use lazy_static::lazy_static;
 #[allow(unused)]
 use crate::domain::client::sqlite::{ConnGetter, SqliteMasterEntry, BLOCKS_TABLE, EVALUATIONS_TABLE, MESSAGES_TABLE, MODULES_TABLE, PROCESSES_TABLE};
 #[allow(unused)]
 use crate::domain::client::sqlite::{Repository, SqliteClient};
-
-lazy_static! {
-    static ref LOG: Arc<dyn Log> = {
-        UnitLog::init()
-    };
-}
+#[allow(unused)]
+use crate::tests::fixtures::log::get_logger;
 
 #[allow(unused)]
 fn setup_url() -> String {
@@ -22,7 +15,7 @@ fn setup_url() -> String {
 }
 
 #[allow(unused)]
-fn delete_db_files(db_file: &str) {
+pub fn delete_db_files(db_file: &str) {
     _ = std::fs::remove_file(db_file);
     _ = std::fs::remove_file(format!("{}-shm", db_file));
     _ = std::fs::remove_file(format!("{}-wal", db_file));
@@ -35,7 +28,7 @@ async fn test_sqlclient_init() {
     let db_file = "cu1.db";
     let db_url = format!("sqlite://{}", db_file);
 
-    let client = SqliteClient::init(db_url.as_str(), Arc::clone(&LOG), Some(true), None).await;
+    let client = SqliteClient::init(db_url.as_str(), get_logger(), Some(true), None).await;
 
     client.get_conn().close().await;
     delete_db_files(db_file);
@@ -46,7 +39,7 @@ async fn test_base_tables_created() {
     let db_file = "cu2.db";
     let db_url = format!("sqlite://{}", db_file);
 
-    let client = SqliteClient::init(db_url.as_str(), Arc::clone(&LOG), Some(true), None).await;
+    let client = SqliteClient::init(db_url.as_str(), get_logger(), Some(true), None).await;
     let query = "SELECT type AS type_, name, tbl_name, rootpage, sql FROM sqlite_master WHERE type='table' AND name=?;";
 
     let result = sqlx::query_as::<_, SqliteMasterEntry>(query)

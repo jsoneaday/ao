@@ -5,7 +5,7 @@ mod utils {
     pub mod maths;
 }
 pub mod client {
-    mod ao_block;
+    pub mod ao_block;
     pub mod arweave;
     pub mod sqlite;
 }

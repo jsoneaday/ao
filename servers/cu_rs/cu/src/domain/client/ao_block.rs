@@ -1,8 +1,9 @@
-use sqlx::{Pool, Sqlite};
+use sqlx::{prelude::FromRow, sqlite::SqliteQueryResult, Sqlite};
 use crate::domain::{maths::increment, model::model::BlockSchema};
-use super::sqlite::BLOCKS_TABLE;
+use super::sqlite::{ConnGetter, SqliteClient, BLOCKS_TABLE};
 
 #[allow(unused)]
+#[derive(FromRow)]
 pub struct BlockDocSchema {
     /// id is actually the height value of BlockSchema
     pub id: i64,
@@ -18,17 +19,17 @@ pub struct Query {
 
 #[allow(unused)]
 pub struct AoBlock<'a> {
-    conn: &'a Pool<Sqlite>
+    client: &'a SqliteClient
 }
 
 impl<'a> AoBlock<'a> {
     #[allow(unused)]
-    pub fn new(conn: &'a Pool<Sqlite>) -> Self {
-        AoBlock { conn }
+    pub fn new(client: &'a SqliteClient) -> Self {
+        AoBlock { client }
     }
 
     #[allow(unused)]
-    pub fn create_query(blocks: &Vec<BlockDocSchema>) -> Query {
+    fn create_query(blocks: &Vec<BlockDocSchema>) -> Query {
         let mut blocks_placeholder = "".to_string();
         let mut last_param = 0;
         for i in 0..blocks.len() {
@@ -37,7 +38,7 @@ impl<'a> AoBlock<'a> {
             let third = second + 1;
 
             if i == 0 {                
-                blocks_placeholder = format!("(${}, ${}, ${})", first, second, third);
+                blocks_placeholder = format!("(${}, ${}, ${}),\n", first, second, third);
             } else if i != blocks.len() - 1 {
                 blocks_placeholder = format!("{}(${}, ${}, ${}),\n", blocks_placeholder.clone(), first, second, third);
             } else {
@@ -62,8 +63,8 @@ impl<'a> AoBlock<'a> {
     }
 
     #[allow(unused)]
-    pub async fn save_block(&self, blocks: &Vec<BlockSchema>) {
-        if blocks.len() == 0 { return; }
+    pub async fn save_block(&self, blocks: &Vec<BlockSchema>) -> Result<Option<SqliteQueryResult>, sqlx::error::Error> {
+        if blocks.len() == 0 { return Ok(None) }
 
         let block_docs = blocks.iter().map(|block| BlockDocSchema { id: block.height, height: block.height, timestamp: block.timestamp }).collect::<Vec<BlockDocSchema>>();
         let query = AoBlock::create_query(&block_docs);
@@ -75,8 +76,12 @@ impl<'a> AoBlock<'a> {
                 .bind(c);
             raw_query = _raw_query;
         }
-        let _result = raw_query
-            .execute(self.conn)
-            .await;
+        
+        match raw_query
+            .execute(self.client.get_conn())
+            .await {
+                Ok(res) => Ok(Some(res)),
+                Err(e) => Err(e)
+        }
     }
 }
