@@ -1,7 +1,6 @@
 use valid::{constraint::{CharCount, NotEmpty, INVALID_CHAR_COUNT_MIN, INVALID_DIGITS_INTEGER}, invalid_value, ConstraintViolation, State, Validate, Validation, ValidationError};
 use crate::config::StartConfigEnv;
 use super::{
-    db_max_listeners_schema::IntegerConstraint, 
     parse_schema::StartSchemaParser, 
     positive_int_schema::PositiveIntSchemaConstraint, 
     shared_validation::{parse_db_url_schema, parse_min_char_one_schema, parse_wallet_schema, INVALID_URL, INVALID_WALLET}, 
@@ -10,8 +9,6 @@ use super::{
 };
 use super::positive_int_schema::parse_positive_int_schema;
 use super::url_parse_schema::parse_url_parse_schema;
-use super::db_mode_schema::parse_db_mode_schema;
-use super::db_max_listeners_schema::parse_db_max_listeners_schema;
 use super::truthy_schema::parse_truthy_schema;
 use super::uuid_array_schema::parse_array_schema;
 
@@ -306,21 +303,21 @@ impl<'a> Validate<StartDomainConfigSchemaConstraint, State<&'a StartDomainConfig
         if self.clone().PROCESS_WASM_COMPUTE_MAX_LIMIT.validate("PROCESS_WASM_COMPUTE_MAX_LIMIT", &PositiveIntSchemaConstraint).result().is_err() {
             violations.push(invalid_value(INVALID_DIGITS_INTEGER, "PROCESS_WASM_COMPUTE_MAX_LIMIT", "".to_string(), "".to_string()));
         }
-        if self.clone().GATEWAY_URL.validate("GATEWAY_URL", &UrlConstraint::new()).result().is_err() {
-            violations.push(invalid_value(INVALID_URL, "GATEWAY_URL", "".to_string(), "".to_string()));
+        if self.clone().GRAPHQL_URL.validate("GRAPHQL_URL", &UrlConstraint::new()).result().is_err() {
+            violations.push(invalid_value(INVALID_URL, "GRAPHQL_URL", "".to_string(), "".to_string()));
         }
         if self.clone().UPLOADER_URL.validate("UPLOADER_URL", &UrlConstraint::new()).result().is_err() {
             violations.push(invalid_value(INVALID_URL, "UPLOADER_URL", "".to_string(), "".to_string()));
         }
-        if self.clone().DB_MODE.validate("DB_MODE", &UrlConstraint::new()).result().is_err() {
-            violations.push(invalid_value(INVALID_URL, "DB_MODE", "".to_string(), "".to_string()));
+        if self.clone().CHECKPOINT_GRAPHQL_URL.validate("CHECKPOINT_GRAPHQL_URL", &UrlConstraint::new()).result().is_err() {
+            violations.push(invalid_value(INVALID_URL, "CHECKPOINT_GRAPHQL_URL", "".to_string(), "".to_string()));
+        }
+        if self.clone().ARWEAVE_URL.validate("ARWEAVE_URL", &UrlConstraint::new()).result().is_err() {
+            violations.push(invalid_value(INVALID_URL, "ARWEAVE_URL", "".to_string(), "".to_string()));
         }
         if self.clone().DB_URL.validate("DB_URL", &NotEmpty).result().is_err()
             || self.clone().DB_URL.unwrap().validate("DB_URL", &CharCount::Min(1)).result().is_err() {
             violations.push(invalid_value(INVALID_URL, "DB_URL", "".to_string(), "".to_string()));
-        }
-        if self.clone().DB_MAX_LISTENERS.validate("DB_MAX_LISTENERS", &IntegerConstraint).result().is_err() {
-            violations.push(invalid_value(INVALID_DIGITS_INTEGER, "DB_MAX_LISTENERS", "".to_string(), "".to_string()));
         }
         if self.clone().WALLET.validate("WALLET", &NotEmpty).result().is_err()
             || self.clone().WALLET.unwrap().validate("WALLET", &CharCount::Min(1)).result().is_err() {
@@ -364,8 +361,17 @@ impl<'a> Validate<StartDomainConfigSchemaConstraint, State<&'a StartDomainConfig
         if self.clone().PROCESS_MEMORY_CACHE_TTL.validate("PROCESS_MEMORY_CACHE_TTL", &PositiveIntSchemaConstraint).result().is_err() {
             violations.push(invalid_value(INVALID_DIGITS_INTEGER, "PROCESS_MEMORY_CACHE_TTL", "".to_string(), "".to_string()));
         }
+        if self.clone().PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL.validate("PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL", &PositiveIntSchemaConstraint).result().is_err() {
+            violations.push(invalid_value(INVALID_DIGITS_INTEGER, "PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL", "".to_string(), "".to_string()));
+        }
         if self.clone().BUSY_THRESHOLD.validate("BUSY_THRESHOLD", &PositiveIntSchemaConstraint).result().is_err() {
             violations.push(invalid_value(INVALID_DIGITS_INTEGER, "BUSY_THRESHOLD", "".to_string(), "".to_string()));
+        }
+        if self.clone().RESTRICT_PROCESSES.validate("RESTRICT_PROCESSES", &UuidArrayConstraint::new()).result().is_err() {
+            violations.push(invalid_value(INVALID_ARRAY, "RESTRICT_PROCESSES", "".to_string(), "".to_string()));
+        }
+        if self.clone().ALLOW_PROCESSES.validate("ALLOW_PROCESSES", &UuidArrayConstraint::new()).result().is_err() {
+            violations.push(invalid_value(INVALID_ARRAY, "ALLOW_PROCESSES", "".to_string(), "".to_string()));
         }
 
         if violations.len() > 0 {
@@ -485,7 +491,7 @@ pub struct DomainConfigSchema {
      *
      * Set to 0 to disable
      */
-    pub PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL: String,
+    pub PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL: i64,
     /**
     * The amount of time in milliseconds, the CU should wait for evaluation to complete
     * before responding with a "busy" message to the client
@@ -526,7 +532,7 @@ impl Default for DomainConfigSchema {
             PROCESS_CHECKPOINT_FILE_DIRECTORY: "".to_string(),
             PROCESS_MEMORY_CACHE_MAX_SIZE: 0,
             PROCESS_MEMORY_CACHE_TTL: 0,
-            PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL: "".to_string(),
+            PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL: 0,
             BUSY_THRESHOLD: 0,
             RESTRICT_PROCESSES: vec![],
             ALLOW_PROCESSES: vec![]

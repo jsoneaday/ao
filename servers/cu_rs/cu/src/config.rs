@@ -622,7 +622,7 @@ impl ConfigEnv {
         ConfigEnv {
             MODE: if final_server_config.MODE == DevOrProd::Development { "development".to_string() } else { "production".to_string() },
             port: final_server_config.port,            
-            GATEWAY_URL: final_server_config.base.GATEWAY_URL,
+            GATEWAY_URL: final_server_config.GATEWAY_URL,
             GRAPHQL_URL: final_server_config.base.GRAPHQL_URL,
             CHECKPOINT_GRAPHQL_URL: final_server_config.base.CHECKPOINT_GRAPHQL_URL,
             ARWEAVE_URL: final_server_config.base.ARWEAVE_URL,
@@ -645,7 +645,10 @@ impl ConfigEnv {
             PROCESS_CHECKPOINT_FILE_DIRECTORY: final_server_config.base.PROCESS_CHECKPOINT_FILE_DIRECTORY,
             PROCESS_MEMORY_CACHE_MAX_SIZE: final_server_config.base.PROCESS_MEMORY_CACHE_MAX_SIZE,
             PROCESS_MEMORY_CACHE_TTL: final_server_config.base.PROCESS_MEMORY_CACHE_TTL,
-            BUSY_THRESHOLD: final_server_config.base.BUSY_THRESHOLD
+            PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL: final_server_config.base.PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL,
+            BUSY_THRESHOLD: final_server_config.base.BUSY_THRESHOLD,
+            RESTRICT_PROCESSES: final_server_config.base.RESTRICT_PROCESSES,
+            ALLOW_PROCESSES: final_server_config.base.ALLOW_PROCESSES
         }
     }
 }
@@ -654,21 +657,22 @@ impl Default for ConfigEnv {
     fn default() -> Self {
         ConfigEnv {
             MODE: "".to_string(),
-            port: 0,
-            DUMP_PATH: "".to_string(),
-            PROCESS_WASM_MEMORY_MAX_LIMIT: 0,
-            PROCESS_WASM_COMPUTE_MAX_LIMIT: 0,
+            port: 0,                        
             GATEWAY_URL: "".to_string(),
+            GRAPHQL_URL: "".to_string(),
+            CHECKPOINT_GRAPHQL_URL: "".to_string(),
             UPLOADER_URL: "".to_string(),
-            DB_MODE: "".to_string(),
+            ARWEAVE_URL: "".to_string(),
             DB_URL: "".to_string(),
-            DB_MAX_LISTENERS: 0,
+            DUMP_PATH: "".to_string(),
             WALLET: "".to_string(),
             WALLET_FILE: "".to_string(),
             MEM_MONITOR_INTERVAL: 0,
             PROCESS_CHECKPOINT_CREATION_THROTTLE: 0,
             DISABLE_PROCESS_CHECKPOINT_CREATION: false,
             EAGER_CHECKPOINT_THRESHOLD: 0,
+            PROCESS_WASM_MEMORY_MAX_LIMIT: 0,
+            PROCESS_WASM_COMPUTE_MAX_LIMIT: 0,
             WASM_EVALUATION_MAX_WORKERS: 0,
             WASM_INSTANCE_CACHE_MAX_SIZE: 0,
             WASM_MODULE_CACHE_MAX_SIZE: 0,
@@ -677,7 +681,10 @@ impl Default for ConfigEnv {
             PROCESS_CHECKPOINT_FILE_DIRECTORY: "".to_string(),
             PROCESS_MEMORY_CACHE_MAX_SIZE: 0,
             PROCESS_MEMORY_CACHE_TTL: 0,
-            BUSY_THRESHOLD: 0
+            PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL: 0,
+            BUSY_THRESHOLD: 0,
+            RESTRICT_PROCESSES: vec![],
+            ALLOW_PROCESSES: vec![]
         }
     }
 }

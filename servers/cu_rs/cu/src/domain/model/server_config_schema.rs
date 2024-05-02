@@ -5,6 +5,7 @@ use super::{domain_config_schema::{StartDomainConfigSchemaConstraint, StartDomai
 #[derive(Clone)]
 #[allow(non_snake_case)]
 pub struct StartServerConfigSchema {
+    pub GATEWAY_URL: Option<String>,
     pub base: StartDomainConfigSchema,
     pub MODE: Option<String>,
     pub port: Option<String>,
@@ -14,6 +15,7 @@ pub struct StartServerConfigSchema {
 impl StartServerConfigSchema {
     pub fn new(start_config: StartConfigEnv, start_domain_config: StartDomainConfigSchema) -> Self {
         StartServerConfigSchema {
+            GATEWAY_URL: start_config.GATEWAY_URL,
             base: start_domain_config,
             MODE: start_config.MODE,
             port: start_config.port,
@@ -59,6 +61,7 @@ impl StartSchemaParser<ServerConfigSchema> for StartServerConfigSchema {
 #[allow(non_snake_case)]
 #[allow(unused)]
 pub struct ServerConfigSchema {
+    pub GATEWAY_URL: String,
     pub base: DomainConfigSchema,
     pub MODE: DevOrProd,
     pub port: u16,
@@ -68,6 +71,7 @@ pub struct ServerConfigSchema {
 impl Default for ServerConfigSchema {
     fn default() -> Self {
         ServerConfigSchema {
+            GATEWAY_URL: "".to_string(),
             base: DomainConfigSchema::default(),
             MODE: DevOrProd::Development,
             port: 0,
@@ -85,6 +89,13 @@ pub enum DevOrProd {
 
 struct ServerConfigConstraint;
 impl ServerConfigConstraint {
+    pub fn is_valid_gateway_url(&self, val: &StartServerConfigSchema) -> bool {
+        if val.GATEWAY_URL.is_some() && val.GATEWAY_URL.as_ref().unwrap().len() > 0 {
+            return true;
+        }
+        false
+    }
+
     pub fn is_valid_mode(&self, val: &StartServerConfigSchema) -> bool {
         if val.MODE == Some("development".to_string()) || val.MODE == Some("production".to_string()) {
             return true;
@@ -125,6 +136,9 @@ impl<'a> Validate<ServerConfigConstraint, State<&'a ServerConfigState>> for Star
         } 
         if !constraint.is_valid_dump_path(&self) {
             violations.push(invalid_value("invalid-dump-path", "DUMP_PATH", "".to_string(), "".to_string()));
+        }
+        if !constraint.is_valid_gateway_url(&self) {
+            violations.push(invalid_value("invalid-gateway-url", "GATEWAY_URL", "".to_string(), "".to_string()));
         }
 
         if violations.len() > 0 {
