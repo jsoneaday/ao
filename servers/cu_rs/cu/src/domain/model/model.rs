@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use sqlx::prelude::FromRow;
 use valid::ValidationError;
 use once_cell::sync::OnceCell;
 use super::domain_config_schema::{DomainConfigSchema, StartDomainConfigSchema};
@@ -54,6 +55,7 @@ pub struct ModuleSchema {
     tags: Vec<RawTagSchema>
 }
 
+#[derive(FromRow)]
 pub struct BlockSchema {
     pub height: i64,
     pub timestamp: i64

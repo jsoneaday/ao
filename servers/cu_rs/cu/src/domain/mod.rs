@@ -1,7 +1,7 @@
 mod config;
 mod dal;
 mod utils {
-    mod error;
+    pub mod error;
     pub mod maths;
 }
 pub mod client {

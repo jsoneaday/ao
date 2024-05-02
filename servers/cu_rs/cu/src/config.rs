@@ -34,40 +34,35 @@ fn get_config_env(development: bool) -> StartConfigEnv {
             port: env::var("PORT")
                 .ok()
                 .and_then(|p| p.is_empty().then_some("6363".to_string()).or(Some(p)))
-                .or(Some("6363".to_string())),
-            DUMP_PATH: env::var("DUMP_PATH")
-                .ok()
-                .and_then(|dp| dp.is_empty().then_some("./static".to_string()).or(Some(dp)))
-                .or(Some("./static".to_string())),
+                .or(Some("6363".to_string())),            
             GATEWAY_URL: env::var("GATEWAY_URL")
                 .ok()
                 .and_then(|gu| gu.is_empty().then_some("https://arweave.net".to_string()).or(Some(gu)))
                 .or(Some("https://arweave.net".to_string())),
+            GRAPHQL_URL: env::var("GATEWAY_URL")
+                .ok()
+                .and_then(|gu| gu.is_empty().then_some("".to_string()).or(Some(gu)))
+                .or(None),
+            CHECKPOINT_GRAPHQL_URL: env::var("CHECKPOINT_GRAPHQL_URL")
+                .ok()
+                .and_then(|cp| cp.is_empty().then_some("".to_string()).or(Some(cp)))
+                .or(None),
+            ARWEAVE_URL: env::var("ARWEAVE_URL")
+                .ok()
+                .and_then(|cp| cp.is_empty().then_some("".to_string()).or(Some(cp)))
+                .or(None),
             UPLOADER_URL: env::var("UPLOADER_URL")
                 .ok()
                 .and_then(|uu| uu.is_empty().then_some("https://up.arweave.net".to_string()).or(Some(uu)))
-                .or(Some("https://up.arweave.net".to_string())),
-            DB_MODE: env::var("DB_MODE")
-                .ok()
-                .and_then(|db| db.is_empty().then_some("embedded".to_string()).or(Some(db)))
-                .or(Some("embedded".to_string())),
+                .or(Some("https://up.arweave.net".to_string())),            
             DB_URL: env::var("DB_URL")
                 .ok()
                 .and_then(|du| du.is_empty().then_some("ao-cache".to_string()).or(Some(du)))
                 .or(Some("ao-cache".to_string())), // todo: need to see how this is used
-            DB_MAX_LISTENERS: env::var("DB_MAX_LISTENERS")
+            DUMP_PATH: env::var("DUMP_PATH")
                 .ok()
-                .and_then(|dml| 
-                    dml.is_empty()
-                        .then_some("100".to_string())
-                        .or(
-                            dml.parse::<i64>()
-                                .ok()
-                                .and_then(|val| Some(val.to_string()))
-                                .or(Some("100".to_string()))
-                        )
-                )
-                .or(Some("100".to_string())),
+                .and_then(|dp| dp.is_empty().then_some("./static".to_string()).or(Some(dp)))
+                .or(Some("./static".to_string())),
             WALLET: env::var("WALLET")
                 .ok()                
                 .or(None),
@@ -245,6 +240,19 @@ fn get_config_env(development: bool) -> StartConfigEnv {
                         )
                 )
                 .or(Some(get_ms_from_hour(24).to_string())),
+            PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL: env::var("PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL")
+                .ok()
+                .and_then(|ec| 
+                    ec.is_empty()
+                        .then_some(get_ms_from_hour(4).to_string())
+                        .or(
+                            ec.parse::<i64>()
+                                .ok()
+                                .and_then(|val| Some(val.to_string()))
+                                .or(Some(get_ms_from_hour(4).to_string()))
+                        )
+                )
+                .or(Some(get_ms_from_hour(24).to_string())),
             BUSY_THRESHOLD: env::var("BUSY_THRESHOLD")
                 .ok()
                 .and_then(|ec| 
@@ -257,47 +265,58 @@ fn get_config_env(development: bool) -> StartConfigEnv {
                                 .or(Some("0".to_string()))
                         )
                 )
-                .or(Some("0".to_string())) // disabled
+                .or(Some("0".to_string())), // disabled
+            RESTRICT_PROCESSES: env::var("RESTRICT_PROCESSES") // this is a comma delimited list!
+                .ok()
+                .and_then(|pi|
+                    pi.is_empty()
+                        .then_some("".to_string())
+                        .or(Some(pi))
+                )
+                .or(Some("".to_string())),
+            ALLOW_PROCESSES: env::var("ALLOW_PROCESSES") // this is a comma delimited list!
+                .ok()
+                .and_then(|pi|
+                    pi.is_empty()
+                        .then_some("".to_string())
+                        .or(Some(pi))
+                )
+                .or(Some("".to_string())),
         },
         production: StartConfigEnv {
             MODE: Some(MODE.clone()),
             port: env::var("PORT")
                 .ok()
                 .and_then(|p| p.is_empty().then_some("6363".to_string()).or(Some(p)))
-                .or(Some("6363".to_string())),
-            DUMP_PATH: env::var("DUMP_PATH")
-                .ok()
-                .and_then(|dp| dp.is_empty().then_some(get_path_as_string(temp_dir())).or(Some(dp)))
-                .or(Some(get_path_as_string(temp_dir()))),
+                .or(Some("6363".to_string())),            
             GATEWAY_URL: env::var("GATEWAY_URL")
                 .ok()
                 .and_then(|gu| gu.is_empty().then_some("https://arweave.net".to_string()).or(Some(gu)))
                 .or(Some("https://arweave.net".to_string())),
+            GRAPHQL_URL: env::var("GRAPHQL_URL")
+                .ok()
+                .and_then(|gu| gu.is_empty().then_some("".to_string()).or(Some(gu)))
+                .or(None),
+            CHECKPOINT_GRAPHQL_URL: env::var("CHECKPOINT_GRAPHQL_URL")
+                .ok()
+                .and_then(|cp| cp.is_empty().then_some("".to_string()).or(Some(cp)))
+                .or(None),
+            ARWEAVE_URL: env::var("ARWEAVE_URL")
+                .ok()
+                .and_then(|cp| cp.is_empty().then_some("".to_string()).or(Some(cp)))
+                .or(None),
             UPLOADER_URL: env::var("UPLOADER_URL")
                 .ok()
                 .and_then(|uu| uu.is_empty().then_some("https://up.arweave.net".to_string()).or(Some(uu)))
                 .or(Some("https://up.arweave.net".to_string())),
-            DB_MODE: env::var("DB_MODE")
-                .ok()
-                .and_then(|db| db.is_empty().then_some("embedded".to_string()).or(Some(db)))
-                .or(Some("embedded".to_string())),
             DB_URL: env::var("DB_URL")
                 .ok()
                 .and_then(|du| du.is_empty().then_some("ao-cache".to_string()).or(Some(du)))
                 .or(Some("ao-cache".to_string())), // todo: need to see how this is used
-            DB_MAX_LISTENERS: env::var("DB_MAX_LISTENERS")
+            DUMP_PATH: env::var("DUMP_PATH")
                 .ok()
-                .and_then(|dml| 
-                    dml.is_empty()
-                        .then_some("100".to_string())
-                        .or(
-                            dml.parse::<i64>()
-                                .ok()
-                                .and_then(|val| Some(val.to_string()))
-                                .or(Some("100".to_string()))
-                        )
-                )
-                .or(Some("100".to_string())),
+                .and_then(|dp| dp.is_empty().then_some(get_path_as_string(temp_dir())).or(Some(dp)))
+                .or(Some(get_path_as_string(temp_dir()))),
             WALLET: env::var("WALLET")
                 .ok()                
                 .or(None),
@@ -475,6 +494,19 @@ fn get_config_env(development: bool) -> StartConfigEnv {
                         )
                 )
                 .or(Some(get_ms_from_hour(24).to_string())),
+            PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL: env::var("PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL")
+                .ok()
+                .and_then(|ec| 
+                    ec.is_empty()
+                        .then_some(get_ms_from_hour(4).to_string())
+                        .or(
+                            ec.parse::<i64>()
+                                .ok()
+                                .and_then(|val| Some(val.to_string()))
+                                .or(Some(get_ms_from_hour(4).to_string()))
+                        )
+                )
+                .or(Some(get_ms_from_hour(24).to_string())),
             BUSY_THRESHOLD: env::var("BUSY_THRESHOLD")
                 .ok()
                 .and_then(|ec| 
@@ -487,7 +519,23 @@ fn get_config_env(development: bool) -> StartConfigEnv {
                                 .or(Some("0".to_string()))
                         )
                 )
-                .or(Some("0".to_string())) // disabled
+                .or(Some("0".to_string())), // disabled
+            RESTRICT_PROCESSES: env::var("RESTRICT_PROCESSES") // this is a comma delimited list!
+                .ok()
+                .and_then(|pi|
+                    pi.is_empty()
+                        .then_some("".to_string())
+                        .or(Some(pi))
+                )
+                .or(Some("".to_string())),
+            ALLOW_PROCESSES: env::var("ALLOW_PROCESSES") // this is a comma delimited list!
+                .ok()
+                .and_then(|pi|
+                    pi.is_empty()
+                        .then_some("".to_string())
+                        .or(Some(pi))
+                )
+                .or(Some("".to_string())),
         }        
     });
 
@@ -508,12 +556,13 @@ pub struct StartConfigEnv {
     pub MODE: Option<String>,
     pub port: Option<String>, // process.env.PORT || 6363,
     pub GATEWAY_URL: Option<String>, // process.env.GATEWAY_URL || 'https://arweave.net',
+    pub GRAPHQL_URL: Option<String>,
+    pub CHECKPOINT_GRAPHQL_URL: Option<String>,
+    pub ARWEAVE_URL: Option<String>,
     pub UPLOADER_URL: Option<String>, // process.env.UPLOADER_URL || 'https://up.arweave.net',
-    pub DB_MODE: Option<String>, // process.env.DB_MODE || 'embedded',
     pub DB_URL: Option<String>, // process.env.DB_URL || 'ao-cache',
-    pub DB_MAX_LISTENERS: Option<String>, // parseInt(process.env.DB_MAX_LISTENERS || '100'),
     pub DUMP_PATH: Option<String>, // process.env.DUMP_PATH || './static',
-    pub  WALLET: Option<String>, // process.env.WALLET,
+    pub WALLET: Option<String>, // process.env.WALLET,
     pub WALLET_FILE: Option<String>, // process.env.WALLET_FILE,
     pub MEM_MONITOR_INTERVAL: Option<String>, // process.env.MEM_MONITOR_INTERVAL || ms('10s'),
     pub PROCESS_CHECKPOINT_CREATION_THROTTLE: Option<String>, // process.env.PROCESS_CHECKPOINT_CREATION_THROTTLE || ms('24h'),
@@ -529,19 +578,23 @@ pub struct StartConfigEnv {
     pub PROCESS_CHECKPOINT_FILE_DIRECTORY: Option<String>, // process.env.PROCESS_CHECKPOINT_FILE_DIRECTORY || tmpdir(),
     pub PROCESS_MEMORY_CACHE_MAX_SIZE: Option<String>, // process.env.PROCESS_MEMORY_CACHE_MAX_SIZE || 500_000_000, // 500MB
     pub PROCESS_MEMORY_CACHE_TTL: Option<String>, // process.env.PROCESS_MEMORY_CACHE_TTL || ms('24h'),
+    pub PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL: Option<String>,
     pub BUSY_THRESHOLD: Option<String>, // process.env.BUSY_THRESHOLD || 0 // disabled
+    pub RESTRICT_PROCESSES: Option<String>,
+    pub ALLOW_PROCESSES: Option<String>
 }
 
 #[allow(non_snake_case)]
 pub struct ConfigEnv {
     pub MODE: String,
-    pub port: u16, // process.env.PORT || 6363,
-    pub DUMP_PATH: String, // process.env.DUMP_PATH || './static',
+    pub port: u16, // process.env.PORT || 6363,    
     pub GATEWAY_URL: String, // process.env.GATEWAY_URL || 'https://arweave.net',
+    pub GRAPHQL_URL: String, // process.env.GATEWAY_URL || 'https://arweave.net',
+    pub CHECKPOINT_GRAPHQL_URL: String,
+    pub ARWEAVE_URL: String,
     pub UPLOADER_URL: String, // process.env.UPLOADER_URL || 'https://up.arweave.net',
-    pub DB_MODE: String, // process.env.DB_MODE || 'embedded',
     pub DB_URL: String, // process.env.DB_URL || 'ao-cache',
-    pub DB_MAX_LISTENERS: i64, // parseInt(process.env.DB_MAX_LISTENERS || '100'),    
+    pub DUMP_PATH: String, // process.env.DUMP_PATH || './static',
     pub WALLET: String, // process.env.WALLET,
     pub WALLET_FILE: String, // process.env.WALLET_FILE,
     pub MEM_MONITOR_INTERVAL: i64, // process.env.MEM_MONITOR_INTERVAL || ms('10s'),
@@ -558,20 +611,24 @@ pub struct ConfigEnv {
     pub PROCESS_CHECKPOINT_FILE_DIRECTORY: String, // process.env.PROCESS_CHECKPOINT_FILE_DIRECTORY || tmpdir(),
     pub PROCESS_MEMORY_CACHE_MAX_SIZE: i64, // process.env.PROCESS_MEMORY_CACHE_MAX_SIZE || 500_000_000, // 500MB
     pub PROCESS_MEMORY_CACHE_TTL: i64, // process.env.PROCESS_MEMORY_CACHE_TTL || ms('24h'),
+    pub PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL: i64, 
     pub BUSY_THRESHOLD: i64, // process.env.BUSY_THRESHOLD || 0 // disabled
+    pub RESTRICT_PROCESSES: Vec<String>,
+    pub ALLOW_PROCESSES: Vec<String>
 }
 
 impl ConfigEnv {
     pub fn new(final_server_config: ServerConfigSchema) -> Self {
         ConfigEnv {
             MODE: if final_server_config.MODE == DevOrProd::Development { "development".to_string() } else { "production".to_string() },
-            port: final_server_config.port,
-            DUMP_PATH: final_server_config.DUMP_PATH,
+            port: final_server_config.port,            
             GATEWAY_URL: final_server_config.base.GATEWAY_URL,
+            GRAPHQL_URL: final_server_config.base.GRAPHQL_URL,
+            CHECKPOINT_GRAPHQL_URL: final_server_config.base.CHECKPOINT_GRAPHQL_URL,
+            ARWEAVE_URL: final_server_config.base.ARWEAVE_URL,
             UPLOADER_URL: final_server_config.base.UPLOADER_URL,
-            DB_MODE: final_server_config.base.DB_MODE,
             DB_URL: final_server_config.base.DB_URL,
-            DB_MAX_LISTENERS: final_server_config.base.DB_MAX_LISTENERS,
+            DUMP_PATH: final_server_config.DUMP_PATH,
             WALLET: final_server_config.base.WALLET,
             WALLET_FILE: "".to_string(),
             MEM_MONITOR_INTERVAL: final_server_config.base.MEM_MONITOR_INTERVAL,

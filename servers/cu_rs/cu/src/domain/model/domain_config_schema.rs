@@ -31,27 +31,33 @@ pub struct StartDomainConfigSchema {
     */
     pub PROCESS_WASM_COMPUTE_MAX_LIMIT: Option<String>,
     /**
-    * The gateway for the CU to use fetch block metadata, data on arweave,
-    * and Scheduler-Location data
-    */
-    pub GATEWAY_URL: Option<String>,
+     * The url for the graphql server to be used by the CU
+     * to query for metadata from an Arweave Gateway
+     *
+     * ie. https://arweave.net/graphql
+     */
+    pub GRAPHQL_URL: Option<String>,
+    /**
+     * The url for the graphql server to be used by the CU
+     * to query for process Checkpoints.
+     *
+     * ie. https://arweave.net/graphql
+     */
+    pub CHECKPOINT_GRAPHQL_URL: Option<String>,
+    /**
+     * The url for the server that hosts the Arweave http API
+     *
+     * ie. https://arweave.net
+     */
+    pub ARWEAVE_URL: Option<String>,
     /**
     * The url of the uploader to use to upload Process Checkpoints to Arweave
     */
     pub UPLOADER_URL: Option<String>,
     /**
-    * Whether the database being used by the CU is embedded within the CU (ie. PouchDB)
-    * or is on another remote process (ie. CouchDB)
-    */
-    pub DB_MODE: Option<String>,
-    /**
     * The connection string to the database
     */
     pub DB_URL: Option<String>,
-    /**
-    * The maximum number of event listeners for the database
-    */
-    pub DB_MAX_LISTENERS: Option<String>,
     /**
     * The wallet for the CU
     */
@@ -114,20 +120,37 @@ pub struct StartDomainConfigSchema {
     */
     pub PROCESS_MEMORY_CACHE_TTL: Option<String>,
     /**
+     * The interval at which the CU should Checkpoint all processes stored in it's
+     * cache.
+     *
+     * Set to 0 to disable
+     */
+    pub PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL: Option<String>,
+    /**
     * The amount of time in milliseconds, the CU should wait for evaluation to complete
     * before responding with a "busy" message to the client
     */
-    pub BUSY_THRESHOLD: Option<String>
+    pub BUSY_THRESHOLD: Option<String>,
+    /**
+     * A list of process ids that the CU should restrict
+     * aka. blacklist
+     */
+    pub RESTRICT_PROCESSES: Option<String>,
+    /**
+     * A list of process ids that the CU should exclusively allow
+     * aka. whitelist
+     */
+    pub ALLOW_PROCESSES: Option<String>,
 }
 
 impl StartDomainConfigSchema {
     pub fn new(start_config_env: StartConfigEnv) -> Self {
         StartDomainConfigSchema {
-            GATEWAY_URL: start_config_env.GATEWAY_URL,
+            GRAPHQL_URL: start_config_env.GRAPHQL_URL,
+            CHECKPOINT_GRAPHQL_URL: start_config_env.CHECKPOINT_GRAPHQL_URL,
+            ARWEAVE_URL: start_config_env.ARWEAVE_URL,
             UPLOADER_URL: start_config_env.UPLOADER_URL,
-            DB_MODE: start_config_env.DB_MODE,
             DB_URL: start_config_env.DB_URL,
-            DB_MAX_LISTENERS: start_config_env.DB_MAX_LISTENERS,
             WALLET: start_config_env.WALLET,
             MEM_MONITOR_INTERVAL: start_config_env.MEM_MONITOR_INTERVAL,
             PROCESS_CHECKPOINT_CREATION_THROTTLE: start_config_env.PROCESS_CHECKPOINT_CREATION_THROTTLE,
@@ -143,7 +166,10 @@ impl StartDomainConfigSchema {
             PROCESS_CHECKPOINT_FILE_DIRECTORY: start_config_env.PROCESS_CHECKPOINT_FILE_DIRECTORY,
             PROCESS_MEMORY_CACHE_MAX_SIZE: start_config_env.PROCESS_MEMORY_CACHE_MAX_SIZE,
             PROCESS_MEMORY_CACHE_TTL: start_config_env.PROCESS_MEMORY_CACHE_TTL,
-            BUSY_THRESHOLD: start_config_env.BUSY_THRESHOLD
+            PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL: start_config_env.PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL,
+            BUSY_THRESHOLD: start_config_env.BUSY_THRESHOLD,
+            RESTRICT_PROCESSES: start_config_env.RESTRICT_PROCESSES,
+            ALLOW_PROCESSES: start_config_env.ALLOW_PROCESSES
         }
     }
 }
@@ -163,8 +189,13 @@ impl StartSchemaParser<DomainConfigSchema> for StartDomainConfigSchema {
             Err(e) => return Err(e)
         };
         
-        match parse_url_parse_schema(self.GATEWAY_URL.clone(), "GATEWAY_URL") {
-            Ok(val) => final_domain_config_schema.GATEWAY_URL = val,
+        match parse_url_parse_schema(self.GRAPHQL_URL.clone(), "GRAPHQL_URL") {
+            Ok(val) => final_domain_config_schema.GRAPHQL_URL = val,
+            Err(e) => return Err(e)
+        };
+
+        match parse_url_parse_schema(self.CHECKPOINT_GRAPHQL_URL.clone(), "CHECKPOINT_GRAPHQL_URL") {
+            Ok(val) => final_domain_config_schema.CHECKPOINT_GRAPHQL_URL = val,
             Err(e) => return Err(e)
         };
         
@@ -173,20 +204,16 @@ impl StartSchemaParser<DomainConfigSchema> for StartDomainConfigSchema {
             Err(e) => return Err(e)
         };
         
-        match parse_db_mode_schema(self.DB_MODE.clone()) {
-            Ok(val) => final_domain_config_schema.DB_MODE = val,
+        match parse_url_parse_schema(self.ARWEAVE_URL.clone(), "ARWEAVE_URL") {
+            Ok(val) => final_domain_config_schema.ARWEAVE_URL = val,
             Err(e) => return Err(e)
         };
         
         match parse_db_url_schema(self.DB_URL.clone(), "DB_URL") {
             Ok(val) => final_domain_config_schema.DB_URL = val,
             Err(e) => return Err(e)
-        };
+        };       
         
-        match parse_db_max_listeners_schema(self.DB_MAX_LISTENERS.clone()) {
-            Ok(val) => final_domain_config_schema.DB_MAX_LISTENERS = val,
-            Err(e) => return Err(e)
-        };
         
         match parse_wallet_schema(self.WALLET.clone()) {
             Ok(val) => final_domain_config_schema.WALLET = val,
@@ -243,8 +270,20 @@ impl StartSchemaParser<DomainConfigSchema> for StartDomainConfigSchema {
             Ok(val) => final_domain_config_schema.PROCESS_MEMORY_CACHE_TTL = val,
             Err(e) => return Err(e)
         };
+        match parse_positive_int_schema(self.PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL.clone(), "PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL") {
+            Ok(val) => final_domain_config_schema.PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL = val,
+            Err(e) => return Err(e)
+        };
         match parse_positive_int_schema(self.BUSY_THRESHOLD.clone(), "BUSY_THRESHOLD") {
             Ok(val) => final_domain_config_schema.BUSY_THRESHOLD = val,
+            Err(e) => return Err(e)
+        };
+        match parse_array_schema(self.RESTRICT_PROCESSES.clone()) {
+            Ok(val) => final_domain_config_schema.RESTRICT_PROCESSES = val,
+            Err(e) => return Err(e)
+        };
+        match parse_array_schema(self.ALLOW_PROCESSES.clone()) {
+            Ok(val) => final_domain_config_schema.ALLOW_PROCESSES = val,
             Err(e) => return Err(e)
         };
 
@@ -352,27 +391,33 @@ pub struct DomainConfigSchema {
     */
     pub PROCESS_WASM_COMPUTE_MAX_LIMIT: i64,
     /**
-    * The gateway for the CU to use fetch block metadata, data on arweave,
-    * and Scheduler-Location data
-    */
-    pub GATEWAY_URL: String,
+     * The url for the graphql server to be used by the CU
+     * to query for metadata from an Arweave Gateway
+     *
+     * ie. https://arweave.net/graphql
+     */
+    pub GRAPHQL_URL: String,
+    /**
+     * The url for the graphql server to be used by the CU
+     * to query for process Checkpoints.
+     *
+     * ie. https://arweave.net/graphql
+     */
+    pub CHECKPOINT_GRAPHQL_URL: String,
+    /**
+     * The url for the server that hosts the Arweave http API
+     *
+     * ie. https://arweave.net
+     */
+    pub ARWEAVE_URL: String,
     /**
     * The url of the uploader to use to upload Process Checkpoints to Arweave
     */
     pub UPLOADER_URL: String,
     /**
-    * Whether the database being used by the CU is embedded within the CU (ie. PouchDB)
-    * or is on another remote process (ie. CouchDB)
-    */
-    pub DB_MODE: String,
-    /**
     * The connection string to the database
     */
     pub DB_URL: String,
-    /**
-    * The maximum number of event listeners for the database
-    */
-    pub DB_MAX_LISTENERS: i64,
     /**
     * The wallet for the CU
     */
@@ -435,10 +480,27 @@ pub struct DomainConfigSchema {
     */
     pub PROCESS_MEMORY_CACHE_TTL: i64,
     /**
+     * The interval at which the CU should Checkpoint all processes stored in it's
+     * cache.
+     *
+     * Set to 0 to disable
+     */
+    pub PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL: String,
+    /**
     * The amount of time in milliseconds, the CU should wait for evaluation to complete
     * before responding with a "busy" message to the client
     */
-    pub BUSY_THRESHOLD: i64
+    pub BUSY_THRESHOLD: i64,
+    /**
+     * A list of process ids that the CU should restrict
+     * aka. blacklist
+     */
+    pub RESTRICT_PROCESSES: Vec<String>,
+    /**
+     * A list of process ids that the CU should exclusively allow
+     * aka. whitelist
+     */
+    pub ALLOW_PROCESSES: Vec<String>
 }
 
 impl Default for DomainConfigSchema {
@@ -446,11 +508,11 @@ impl Default for DomainConfigSchema {
         DomainConfigSchema {
             PROCESS_WASM_MEMORY_MAX_LIMIT: 0,
             PROCESS_WASM_COMPUTE_MAX_LIMIT: 0,
-            GATEWAY_URL: "".to_string(),
-            UPLOADER_URL: "".to_string(),
-            DB_MODE: "".to_string(),
-            DB_URL: "".to_string(),
-            DB_MAX_LISTENERS: 0,
+            GRAPHQL_URL: "".to_string(),
+            CHECKPOINT_GRAPHQL_URL: "".to_string(),
+            ARWEAVE_URL: "".to_string(),
+            UPLOADER_URL: "".to_string(),                        
+            DB_URL: "".to_string(),            
             WALLET: "".to_string(),
             MEM_MONITOR_INTERVAL: 0,
             PROCESS_CHECKPOINT_CREATION_THROTTLE: 0,
@@ -464,7 +526,10 @@ impl Default for DomainConfigSchema {
             PROCESS_CHECKPOINT_FILE_DIRECTORY: "".to_string(),
             PROCESS_MEMORY_CACHE_MAX_SIZE: 0,
             PROCESS_MEMORY_CACHE_TTL: 0,
-            BUSY_THRESHOLD: 0
+            PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL: "".to_string(),
+            BUSY_THRESHOLD: 0,
+            RESTRICT_PROCESSES: vec![],
+            ALLOW_PROCESSES: vec![]
         }
     }
 }

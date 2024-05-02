@@ -45,7 +45,7 @@ pub trait ConnGetter: Repository {
 
 pub struct SqliteClient {
     conn: Pool<Sqlite>,
-    logger: Arc<dyn Log>
+    pub logger: Arc<dyn Log>
 }
 
 #[async_trait]
