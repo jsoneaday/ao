@@ -1,3 +1,32 @@
+#[allow(unused)]
+const PROCESS: &str = "zc24Wpv_i6NNCEdxeKt7dcNrqL5w0hrShtSCcFGGL24";
+
+#[tokio::test]
+async fn test_load_tx_meta() {
+    use ao_common::test_utils::{get_uploader_url, get_wallet_file};
+    use ao_common::test_utils::get_graphql_url;
+    use crate::domain::client::arweave::InternalArweave;
+
+    let arweave = InternalArweave::new(get_wallet_file(), get_uploader_url());
+    match arweave.load_tx_meta(get_graphql_url(), PROCESS).await {
+        Ok(_) => (),
+        Err(e) => panic!("test_load_tx_meta failed: {:?}", e)
+    };
+}
+
+#[tokio::test]
+async fn test_load_tx_data() {
+    use ao_common::test_utils::{get_uploader_url, get_wallet_file};
+    use ao_common::test_utils::get_arweave_url;
+    use crate::domain::client::arweave::InternalArweave;
+
+    let arweave = InternalArweave::new(get_wallet_file(), get_uploader_url());
+    match arweave.load_tx_data(get_arweave_url(), PROCESS).await {
+        Ok(_) => (),
+        Err(e) => panic!("test_load_tx_data failed: {:?}", e)
+    };
+}
+
 #[tokio::test]
 async fn test_build_sign_dataitem() {        
     use std::path::PathBuf;

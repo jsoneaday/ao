@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
-
-use super::shared_models::{Owner, Tag};
+use super::shared_models::Tag;
 
 #[derive(Serialize)]
 pub struct GraphqlInput<T> {
@@ -8,30 +7,35 @@ pub struct GraphqlInput<T> {
     pub variables: T
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct TransactionConnectionSchema {
     pub data: Transactions
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct Transactions {
     #[serde(rename = "pageInfo")]
     pub page_info: Option<PageInfo>,
     pub transactions: Edges
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct Edges {
     pub edges: Vec<NodeParent>
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct NodeParent {
     pub node: Node
 }
 
+#[derive(Deserialize, Clone, Debug)]
+pub struct Owner {
+    pub address: String
+}
+
 /// Regardless of the schema def, graphql queries can return any combination of fields 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct Node {
     pub id: Option<String>,
     pub anchor: Option<String>,
@@ -50,14 +54,14 @@ pub struct Node {
 }
 
 #[allow(unused)]
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct Amount {
     pub winston: String,
     pub ar: String
 }
 
 #[allow(unused)]
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct MetaData {
     pub size: i64,
     #[serde(rename = "type")]
@@ -65,7 +69,7 @@ pub struct MetaData {
 }
 
 #[allow(unused)]
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct Block {
     id: String,
     timestamp: i64,
@@ -76,19 +80,19 @@ pub struct Block {
 
 /// Deprecate
 #[allow(unused)]
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct Parent {
     id: String
 }
 
 #[allow(unused)]
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct Bundle {
     id: String
 }
 
 #[allow(unused)]
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct PageInfo {
     #[serde(rename = "hasNextPage")]
     has_next_page: bool

@@ -82,29 +82,29 @@ impl InternalArweave {
      * @param {Env1} env
      * @returns {LoadTransactionMeta}
     */
-    pub async fn load_tx_meta(self, gateway_url: &str, id: &str) -> Result<Node, QueryGatewayErrors> {
+    pub async fn load_tx_meta(self, graphql_url: &str, id: &str) -> Result<Node, QueryGatewayErrors> {
         #[allow(non_snake_case)]
         let GET_PROCESSES_QUERY = r#"
             query GetProcesses ($processIds: [ID!]!) {
             transactions(ids: $processIds) {
                 edges {
-                node {
-                    id
-                    signature
-                    anchor
-                    owner {
-                    address
+                    node {
+                        id
+                        signature
+                        anchor
+                        owner {
+                            address
+                        }
+                        tags {
+                            name
+                            value
+                        }
                     }
-                    tags {
-                    name
-                    value
-                    }
-                }
                 }
             }
         }"#;
 
-        let result = self.query_gateway::<ProcessIds, TransactionConnectionSchema>(gateway_url, GET_PROCESSES_QUERY, ProcessIds {
+        let result = self.query_gateway::<ProcessIds, TransactionConnectionSchema>(graphql_url, GET_PROCESSES_QUERY, ProcessIds {
             process_ids: vec![id.to_string()]
         }).await;
 
@@ -113,7 +113,7 @@ impl InternalArweave {
                 Ok(tx.data.transactions.edges[0].node.clone())
             },
             Err(e) => {
-                error!("Error Encountered when fetching transaction {} from gateway {}", id, gateway_url);
+                error!("Error Encountered when fetching transaction {} from gateway {}", id, graphql_url);
                 Err(e)
             }
         }
@@ -131,20 +131,20 @@ impl InternalArweave {
     * @param {Env2} env
     * @returns {LoadTransactionData}
     */
-    pub async fn load_tx_data(&self, gateway_url: &str, id: &str) -> Result<Response, Error> {
-        let result = self.client.get(format!("{}/raw/{}", gateway_url, id)).send().await;
+    pub async fn load_tx_data(&self, arweave_url: &str, id: &str) -> Result<Response, Error> {
+        let result = self.client.get(format!("{}/raw/{}", arweave_url, id)).send().await;
         match result {
             Ok(res) => Ok(res),
             Err(e) => {
-                error!("Error Encountered when fetching raw data for transaction {} from gateway {}", id, gateway_url);
+                error!("Error Encountered when fetching raw data for transaction {} from gateway {}", id, arweave_url);
                 Err(e)
             }
         }
     }
 
-    pub async fn query_gateway<T: Serialize, U: for<'de> Deserialize<'de>>(&self, gateway_url: &str, query: &str, variables: T) -> 
+    pub async fn query_gateway<T: Serialize, U: for<'de> Deserialize<'de>>(&self, graphql_url: &str, query: &str, variables: T) -> 
         Result<U, QueryGatewayErrors> {        
-        let result = self.client.post(format!("{}{}", gateway_url, "/graphql"))
+        let result = self.client.post(graphql_url)
             .headers(get_content_type_headers())
             .body(
                 serde_json::to_string(&GraphqlInput {
@@ -160,13 +160,13 @@ impl InternalArweave {
                 let body_str = res.text().await.unwrap();
                 match serde_json::from_str::<U>(&body_str) {
                     Ok(res) => Ok(res),
-                    Err(e) => {                        
+                    Err(e) => {               
                         error!("Serialization error {:?}", e);
                         Err(QueryGatewayErrors::Serialization(Some(Box::new(e))))
                     }
                 }
             },
-            Err(e) => {
+            Err(e) => { 
                 error!("Error Encountered when querying gateway");
                 Err(QueryGatewayErrors::Network(Some(Box::new(e))))
             }
@@ -225,5 +225,10 @@ mod tests {
     async fn test_address_with() {
         let arweave = InternalArweave::new(get_wallet_file(), get_uploader_url());
         assert!(!arweave.address().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_random_anchor_created_without_panic() {
+        InternalArweave::create_random_anchor();
     }
 }

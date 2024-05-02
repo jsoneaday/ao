@@ -47,7 +47,8 @@ impl From<ByteErrorType> for JsonErrorType {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Owner {
     pub address: String,
-    pub key: String,
+    // #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -143,7 +144,7 @@ impl Process {
 
         let owner = Owner {
             address,
-            key: owner
+            key: Some(owner)
         };
 
         let ac = anchor.clone();
@@ -187,7 +188,7 @@ impl Message {
 
         let owner = Owner {
             address,
-            key: owner,
+            key: Some(owner),
         };
 
         let assignment_inner = AssignmentInner {
@@ -224,7 +225,7 @@ impl Message {
 
                 let owner = Owner {
                     address,
-                    key: owner,
+                    key: Some(owner),
                 };
 
                 Some(MessageInner {
@@ -387,7 +388,7 @@ impl Message {
                     id: bundle_data_item.id(),
                     owner: Owner {
                         address,
-                        key: owner,
+                        key: Some(owner),
                     },
                     tags: bundle_data_item.tags(),
                     signature: bundle_data_item.signature(),

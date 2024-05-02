@@ -1,5 +1,6 @@
 use std::{error::Error, fmt::Display};
 
+#[allow(unused)]
 #[derive(Debug)]
 pub enum CuErrors {
     BlockMeta(Option<Box<dyn Error + 'static + Send>>)
