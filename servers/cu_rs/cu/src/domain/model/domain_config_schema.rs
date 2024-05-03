@@ -4,12 +4,12 @@ use super::{
     parse_schema::StartSchemaParser, 
     positive_int_schema::PositiveIntSchemaConstraint, 
     shared_validation::{parse_db_url_schema, parse_min_char_one_schema, parse_wallet_schema, INVALID_URL, INVALID_WALLET}, 
-    truthy_schema::{TruthyConstraint, INVALID_NOT_TRUTHY}, 
+    truthy_schema::{TruthyConstraint, INVALID_NOT_BOOLEAN}, 
     url_parse_schema::UrlConstraint, uuid_array_schema::{UuidArrayConstraint, INVALID_ARRAY}
 };
 use super::positive_int_schema::parse_positive_int_schema;
 use super::url_parse_schema::parse_url_parse_schema;
-use super::truthy_schema::parse_truthy_schema;
+use super::truthy_schema::parse_boolean_schema;
 use super::uuid_array_schema::parse_array_schema;
 
 #[derive(Clone)]
@@ -227,7 +227,7 @@ impl StartSchemaParser<DomainConfigSchema> for StartDomainConfigSchema {
             Err(e) => return Err(e)
         };
         
-        match parse_truthy_schema(self.DISABLE_PROCESS_CHECKPOINT_CREATION.clone()) {
+        match parse_boolean_schema(self.DISABLE_PROCESS_CHECKPOINT_CREATION.clone()) {
             Ok(val) => final_domain_config_schema.DISABLE_PROCESS_CHECKPOINT_CREATION = val,
             Err(e) => return Err(e)
         };
@@ -330,7 +330,7 @@ impl<'a> Validate<StartDomainConfigSchemaConstraint, State<&'a StartDomainConfig
             violations.push(invalid_value(INVALID_DIGITS_INTEGER, "PROCESS_CHECKPOINT_CREATION_THROTTLE", "".to_string(), "".to_string()));
         }
         if self.clone().DISABLE_PROCESS_CHECKPOINT_CREATION.validate("DISABLE_PROCESS_CHECKPOINT_CREATION", &TruthyConstraint).result().is_err() {
-            violations.push(invalid_value(INVALID_NOT_TRUTHY, "DISABLE_PROCESS_CHECKPOINT_CREATION", "".to_string(), "".to_string()));
+            violations.push(invalid_value(INVALID_NOT_BOOLEAN, "DISABLE_PROCESS_CHECKPOINT_CREATION", "".to_string(), "".to_string()));
         }
         if self.clone().EAGER_CHECKPOINT_THRESHOLD.validate("EAGER_CHECKPOINT_THRESHOLD", &PositiveIntSchemaConstraint).result().is_err() {
             violations.push(invalid_value(INVALID_DIGITS_INTEGER, "EAGER_CHECKPOINT_THRESHOLD", "".to_string(), "".to_string()));
@@ -381,7 +381,7 @@ impl<'a> Validate<StartDomainConfigSchemaConstraint, State<&'a StartDomainConfig
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[allow(non_snake_case)]
 pub struct DomainConfigSchema {
     /**

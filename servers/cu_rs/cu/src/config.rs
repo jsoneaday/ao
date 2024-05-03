@@ -8,6 +8,7 @@ use crate::{
         parse_schema::StartSchemaParser, 
         server_config_schema::{DevOrProd, ServerConfigSchema, StartServerConfigSchema}
     }, 
+    domain::schema_utils::{preprocess_urls, preprocess_wallet},
     utils::{datetime::{get_ms_from_hour, get_ms_from_sec}, paths::get_path_as_string}
 };
 use std::env::temp_dir;
@@ -20,8 +21,10 @@ use std::env::temp_dir;
  */
 pub static CONFIG_ENVS: OnceCell<StartConfigEnvSet> = OnceCell::new();
 
+/// This function will provide a minimum parsing of env variables
+/// You can consider it a pre-parser that eliminates some trivial errors like non-existant variables
 #[allow(non_snake_case)]
-fn get_config_env(development: bool) -> StartConfigEnv {
+fn get_start_config_env(is_development: bool) -> StartConfigEnv {
     dotenv().ok();
 
     let MODE = env::var("NODE_CONFIG_ENV").unwrap_or("".to_string());
@@ -539,7 +542,7 @@ fn get_config_env(development: bool) -> StartConfigEnv {
         }        
     });
 
-    match development {
+    match is_development {
         true => envs.development.clone(),
         false => envs.production.clone()
     }
@@ -689,10 +692,16 @@ impl Default for ConfigEnv {
     }
 }
 
+fn preprocessed_server_config_schema(config: StartConfigEnv) -> StartConfigEnv {
+    let _config = preprocess_wallet(config);
+    let _config = preprocess_urls(_config.unwrap());
+    _config.unwrap()
+}
+
 static DOMAIN_CONFIG: OnceCell<Result<DomainConfigSchema, ValidationError>> = OnceCell::new();
-pub fn get_domain_config_schema<'a>(development: bool) -> &'a Result<DomainConfigSchema, ValidationError> {
+pub fn get_domain_config_schema<'a>(is_development: bool) -> &'a Result<DomainConfigSchema, ValidationError> {
     DOMAIN_CONFIG.get_or_init(|| {
-        match StartDomainConfigSchema::new(get_config_env(development)).parse() {
+        match StartDomainConfigSchema::new(preprocessed_server_config_schema(get_start_config_env(is_development))).parse() {
             Ok(final_domain_config) => Ok(final_domain_config),
             Err(e) => Err(e)
         }
@@ -700,9 +709,10 @@ pub fn get_domain_config_schema<'a>(development: bool) -> &'a Result<DomainConfi
 }
 
 static CONFIG: OnceCell<Result<ConfigEnv, ValidationError>> = OnceCell::new();
-pub fn get_server_config_schema<'a>(development: bool) -> &'a Result<ConfigEnv, ValidationError> {
+pub fn get_server_config_schema<'a>(is_development: bool) -> &'a Result<ConfigEnv, ValidationError> {
     CONFIG.get_or_init(|| {
-        let start_config = get_config_env(development);
+        let mut start_config = get_start_config_env(is_development);
+        start_config = preprocessed_server_config_schema(start_config);
         let start_domain_config = StartDomainConfigSchema::new(start_config.clone());
         
         match StartServerConfigSchema::new(start_config, start_domain_config).parse() {
@@ -717,3 +727,16 @@ pub fn get_server_config_schema<'a>(development: bool) -> &'a Result<ConfigEnv, 
 }
 
 // todo: setup remaining schema functions 
+
+#[cfg(test)]
+mod tests {
+    use super::get_domain_config_schema;
+
+    #[test]
+    fn test_get_domain_config_schema() {
+        match get_domain_config_schema(false) {
+            Ok(schema) => println!("domain schema: {:?}", schema),
+            Err(e) => panic!("{}", e)
+        }
+    }
+}

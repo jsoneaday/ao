@@ -1,8 +1,10 @@
 mod config;
 mod dal;
 mod utils {
+    pub mod utils;
     pub mod error;
     pub mod maths;
+    pub mod strings;
 }
 pub mod client {
     pub mod ao_block;
@@ -36,6 +38,8 @@ use ao_common::domain::dal::Log;
 
 pub use crate::domain::model::domain_config_schema::DomainConfigSchema;
 pub use crate::domain::utils::maths;
+pub use crate::domain::utils::utils as schema_utils;
+pub use crate::domain::utils::strings;
 use crate::domain::client::arweave::InternalArweave;
 
 #[allow(unused)]

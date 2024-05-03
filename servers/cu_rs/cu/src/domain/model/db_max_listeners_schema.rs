@@ -1,6 +1,8 @@
 use valid::{invalid_value, FieldName, Validate, Validation, ValidationError};
 
+#[allow(unused)]
 const DB_MAX_LISTENERS: &str = "DB_MAX_LISTENERS must be an integer";
+#[allow(unused)]
 pub fn parse_db_max_listeners_schema(val: Option<String>) -> Result<i64, ValidationError> {
     let result = val.validate("DB_MAX_LISTENERS", &IntegerConstraint).with_message(DB_MAX_LISTENERS);
     match result {

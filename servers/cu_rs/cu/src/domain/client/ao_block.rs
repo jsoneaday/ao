@@ -27,6 +27,7 @@ struct GqlQueryVariables {
     limit: i64
 }
 
+#[allow(unused)]
 const GET_BLOCKS_QUERY: &str = r"
     query GetBlocks($min: Int!, $limit: Int!) {
         blocks (
@@ -156,6 +157,7 @@ impl<'a> AoBlock<'a> {
         }
     }
 
+    #[allow(unused)]
     async fn fetch_page(&self, min_height: i64, max_timestamp: i64, page_size: i64, graphql_url: &str) {
         self.sql_client.logger.log(format!("Loading page of up to {} blocks after height {} up to timestamp {}", page_size, min_height, max_timestamp));
 
@@ -196,6 +198,7 @@ impl<'a> AoBlock<'a> {
         };
     }
 
+    #[allow(unused)]
     async fn fetch_all_pages(min_height: i64, max_timestamp: i64) {
         let _max_timestamp = f64::floor(max_timestamp as f64 / 1000.0);
 
@@ -209,7 +212,6 @@ impl<'a> AoBlock<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[tokio::test]
     async fn test_fetch_page() {

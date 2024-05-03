@@ -3,6 +3,8 @@ use std::sync::{Arc, RwLock};
 use dotenv::dotenv;
 use lazy_static::lazy_static;
 
+// todo: delete this and use ConfigEnv
+
 lazy_static! {
     pub static ref UPLOADER_URL: Arc<RwLock<String>> = {
         dotenv().ok();

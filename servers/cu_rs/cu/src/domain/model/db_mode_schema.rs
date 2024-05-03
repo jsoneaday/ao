@@ -1,6 +1,7 @@
 use valid::{invalid_value, FieldName, Validate, Validation, ValidationError};
 use super::shared_validation::{option_validation_result, DbMode};
 
+#[allow(unused)]
 pub fn parse_db_mode_schema(val: Option<String>) -> Result<String, ValidationError> {    
     option_validation_result(val.validate("DB_MODE", &DbModeConstraint::new()).result())
 }
