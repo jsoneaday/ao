@@ -2,6 +2,8 @@ use std::borrow::Cow;
 use regex::Regex;
 use valid::{invalid_value, FieldName, Validate, Validation, ValidationError};
 
+use crate::domain::strings::IsNoneOrEmpty;
+
 pub const INVALID_ARRAY: &str = "invalid-array";
 
 pub fn parse_array_schema(val: Option<String>) -> Result<Vec<String>, ValidationError> {
@@ -40,13 +42,15 @@ pub struct UuidArrayConstraint {
 impl UuidArrayConstraint {
     pub fn new() -> Self {
         UuidArrayConstraint {
-            array_regex: Regex::new(r#"^\[(?:\s*"[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}"(?:,\s*"[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}")*)\]$"#).unwrap(),
-            comma_delim_list_regex: Regex::new(r#"^"[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}"(?:,\s*"[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}")*$"#).unwrap()
+            array_regex: Regex::new(r#"\[(?:[^\],]*,)?\]"#).unwrap(),
+            comma_delim_list_regex: Regex::new(r#"([^,]+(?:,\s*[^,]+)*)"#).unwrap()
         }
     }
 
     pub fn is_array(&self, val: Option<String>) -> bool {
-        if val.is_some() {
+        if val.is_none_or_empty() {
+            return true;
+        } else if val.is_some() {
             if self.array_regex.is_match(val.unwrap().as_str()) {
                 return true;
             }
@@ -55,7 +59,9 @@ impl UuidArrayConstraint {
     }
 
     pub fn is_comma_delim_list(&self, val: Option<String>) -> bool {
-        if val.is_some() {
+        if val.is_none_or_empty() {
+            return true;
+        } else if val.is_some() {
             if self.comma_delim_list_regex.is_match(val.unwrap().as_str()) {
                 return true;
             }
@@ -65,10 +71,11 @@ impl UuidArrayConstraint {
 }
 
 impl Validate<UuidArrayConstraint, FieldName> for Option<String> {
-    fn validate(self, context: impl Into<FieldName>, constraint: &UuidArrayConstraint) -> Validation<UuidArrayConstraint, Self> {
+    fn validate(self, context: impl Into<FieldName>, constraint: &UuidArrayConstraint) -> Validation<UuidArrayConstraint, Self> {            
         if constraint.is_array(self.clone()) || constraint.is_comma_delim_list(self.clone()) {
             return Validation::success(self);
         }
+        
         Validation::failure(vec![invalid_value("invalid-array", context, if self.is_none() { "".to_string() } else { self.unwrap() }, "value must be an array or comma delimited list".to_string())])
     }
 }

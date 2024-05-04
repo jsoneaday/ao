@@ -29,7 +29,7 @@ pub mod model {
     mod url_parse_schema;
     mod db_mode_schema;
     mod db_max_listeners_schema;
-    mod truthy_schema;
+    mod boolean_schema;
     mod uuid_array_schema;
 }    
 

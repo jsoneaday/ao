@@ -3,16 +3,16 @@ use valid::{invalid_value, FieldName, Validate, Validation, ValidationError};
 pub const INVALID_NOT_BOOLEAN: &str = "invalid-not-boolean";
 
 pub fn parse_boolean_schema(val: Option<String>) -> Result<bool, ValidationError> {
-    let result = val.validate("DISABLE_PROCESS_CHECKPOINT_CREATION", &TruthyConstraint).result();
+    let result = val.validate("DISABLE_PROCESS_CHECKPOINT_CREATION", &BooleanConstraint).result();
     match result {
         Ok(_val) => Ok(true),
         Err(e) => Err(e)
     }
 }
 
-pub struct TruthyConstraint;
+pub struct BooleanConstraint;
 
-impl TruthyConstraint {
+impl BooleanConstraint {
     pub fn is_boolean(&self, val: Option<String>) -> bool {        
         if val.is_some() {
             let unwrapped_val = val.unwrap();
@@ -25,8 +25,8 @@ impl TruthyConstraint {
     }
 }
 
-impl Validate<TruthyConstraint, FieldName> for Option<String> {
-    fn validate(self, context: impl Into<FieldName>, constraint: &TruthyConstraint) -> Validation<TruthyConstraint, Self> {
+impl Validate<BooleanConstraint, FieldName> for Option<String> {
+    fn validate(self, context: impl Into<FieldName>, constraint: &BooleanConstraint) -> Validation<BooleanConstraint, Self> {
         if constraint.is_boolean(self.clone()) {
             return Validation::success(self);
         }

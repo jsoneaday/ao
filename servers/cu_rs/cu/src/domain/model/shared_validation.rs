@@ -2,6 +2,7 @@ use valid::{constraint::{CharCount, NotEmpty}, Validate, ValidationError, Valida
 use std::fmt::Display;
 
 pub const INVALID_EMPTY: &str = "invalid-empty";
+/// A number represented with underscores, i.e. 100_000
 pub const INVALID_NOT_MATCH_UNDERSCORE: &str = "invalid-positive-int-no-match-underscore";
 pub const INVALID_NOT_MATCH_NUMBER: &str = "invalid-positive-int-no-match-number";
 pub const INVALID_URL: &str = "invalid-url";

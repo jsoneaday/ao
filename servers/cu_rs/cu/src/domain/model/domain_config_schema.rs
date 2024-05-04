@@ -4,12 +4,12 @@ use super::{
     parse_schema::StartSchemaParser, 
     positive_int_schema::PositiveIntSchemaConstraint, 
     shared_validation::{parse_db_url_schema, parse_min_char_one_schema, parse_wallet_schema, INVALID_URL, INVALID_WALLET}, 
-    truthy_schema::{TruthyConstraint, INVALID_NOT_BOOLEAN}, 
+    boolean_schema::{BooleanConstraint, INVALID_NOT_BOOLEAN}, 
     url_parse_schema::UrlConstraint, uuid_array_schema::{UuidArrayConstraint, INVALID_ARRAY}
 };
 use super::positive_int_schema::parse_positive_int_schema;
 use super::url_parse_schema::parse_url_parse_schema;
-use super::truthy_schema::parse_boolean_schema;
+use super::boolean_schema::parse_boolean_schema;
 use super::uuid_array_schema::parse_array_schema;
 
 #[derive(Clone)]
@@ -253,7 +253,10 @@ impl StartSchemaParser<DomainConfigSchema> for StartDomainConfigSchema {
         };
         match parse_array_schema(self.PROCESS_IGNORE_ARWEAVE_CHECKPOINTS.clone()) {
             Ok(val) => final_domain_config_schema.PROCESS_IGNORE_ARWEAVE_CHECKPOINTS = val,
-            Err(e) => return Err(e)
+            Err(e) => {
+                println!("PROCESS_IGNORE_ARWEAVE_CHECKPOINTS {:?}", self.PROCESS_IGNORE_ARWEAVE_CHECKPOINTS.clone());
+                return Err(e);
+            }
         };
         match parse_min_char_one_schema(self.PROCESS_CHECKPOINT_FILE_DIRECTORY.clone(), "PROCESS_CHECKPOINT_FILE_DIRECTORY") {
             Ok(val) => final_domain_config_schema.PROCESS_CHECKPOINT_FILE_DIRECTORY = val,
@@ -276,11 +279,17 @@ impl StartSchemaParser<DomainConfigSchema> for StartDomainConfigSchema {
             Err(e) => return Err(e)
         };
         match parse_array_schema(self.RESTRICT_PROCESSES.clone()) {
-            Ok(val) => final_domain_config_schema.RESTRICT_PROCESSES = val,
+            Ok(val) => {
+                println!("RESTRICT_PROCESSES {:?}", self.RESTRICT_PROCESSES.clone());
+                final_domain_config_schema.RESTRICT_PROCESSES = val;
+            },
             Err(e) => return Err(e)
         };
         match parse_array_schema(self.ALLOW_PROCESSES.clone()) {
-            Ok(val) => final_domain_config_schema.ALLOW_PROCESSES = val,
+            Ok(val) => {
+                println!("ALLOW_PROCESSES {:?}", self.ALLOW_PROCESSES.clone());
+                final_domain_config_schema.ALLOW_PROCESSES = val;
+            },
             Err(e) => return Err(e)
         };
 
@@ -329,7 +338,7 @@ impl<'a> Validate<StartDomainConfigSchemaConstraint, State<&'a StartDomainConfig
         if self.clone().PROCESS_CHECKPOINT_CREATION_THROTTLE.validate("PROCESS_CHECKPOINT_CREATION_THROTTLE", &PositiveIntSchemaConstraint).result().is_err() {
             violations.push(invalid_value(INVALID_DIGITS_INTEGER, "PROCESS_CHECKPOINT_CREATION_THROTTLE", "".to_string(), "".to_string()));
         }
-        if self.clone().DISABLE_PROCESS_CHECKPOINT_CREATION.validate("DISABLE_PROCESS_CHECKPOINT_CREATION", &TruthyConstraint).result().is_err() {
+        if self.clone().DISABLE_PROCESS_CHECKPOINT_CREATION.validate("DISABLE_PROCESS_CHECKPOINT_CREATION", &BooleanConstraint).result().is_err() {
             violations.push(invalid_value(INVALID_NOT_BOOLEAN, "DISABLE_PROCESS_CHECKPOINT_CREATION", "".to_string(), "".to_string()));
         }
         if self.clone().EAGER_CHECKPOINT_THRESHOLD.validate("EAGER_CHECKPOINT_THRESHOLD", &PositiveIntSchemaConstraint).result().is_err() {

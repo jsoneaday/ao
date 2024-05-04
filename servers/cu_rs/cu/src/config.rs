@@ -735,7 +735,7 @@ mod tests {
     #[test]
     fn test_get_domain_config_schema() {
         match get_domain_config_schema(false) {
-            Ok(schema) => println!("domain schema: {:?}", schema),
+            Ok(schema) => (),
             Err(e) => panic!("{}", e)
         }
     }
