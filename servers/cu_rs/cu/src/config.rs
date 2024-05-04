@@ -588,6 +588,7 @@ pub struct StartConfigEnv {
 }
 
 #[allow(non_snake_case)]
+#[derive(Debug)]
 pub struct ConfigEnv {
     pub MODE: String,
     pub port: u16, // process.env.PORT || 6363,    
@@ -730,12 +731,20 @@ pub fn get_server_config_schema<'a>(is_development: bool) -> &'a Result<ConfigEn
 
 #[cfg(test)]
 mod tests {
-    use super::get_domain_config_schema;
+    use super::{get_domain_config_schema, get_server_config_schema};
 
     #[test]
     fn test_get_domain_config_schema() {
         match get_domain_config_schema(false) {
-            Ok(schema) => (),
+            Ok(_) => (),
+            Err(e) => panic!("{}", e)
+        }
+    }
+
+    #[test]
+    fn test_get_server_config_schema() {
+        match get_server_config_schema(false) {
+            Ok(schema) => println!("server schema {:?}", schema),
             Err(e) => panic!("{}", e)
         }
     }
