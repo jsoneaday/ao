@@ -1,8 +1,10 @@
+use std::sync::Arc;
+use async_trait::async_trait;
 use ao_common::{models::gql_models::{GraphqlInput, PageInfo}, network::utils::get_content_type_headers};
 use async_recursion::async_recursion;
 use serde::Serialize;
 use sqlx::{prelude::FromRow, sqlite::SqliteQueryResult, Sqlite};
-use crate::domain::{maths::increment, model::model::BlockSchema, utils::error::CuErrors};
+use crate::domain::{dal::FindBlockSchema, maths::increment, model::model::BlockSchema, utils::error::CuErrors};
 use super::sqlite::{ConnGetter, SqliteClient, BLOCKS_TABLE};
 
 #[allow(unused)]
@@ -82,17 +84,17 @@ const GET_BLOCKS_QUERY: &str = r"
     }";
 
 #[allow(unused)]
-pub struct AoBlock<'a> {
-    sql_client: &'a SqliteClient,
+pub struct AoBlock {
+    sql_client: Arc<SqliteClient>,
     client: reqwest::Client
 }
 
-impl<'a> AoBlock<'a> {
+impl AoBlock {
     #[allow(unused)]
     // todo: if SqliteClient isn't always needed make optional
-    pub fn new(client: &'a SqliteClient) -> Self {
+    pub fn new(sql_client: Arc<SqliteClient>) -> Self {
         AoBlock { 
-            sql_client: client,
+            sql_client: Arc::clone(&sql_client),
             client: reqwest::Client::new()
         }
     }
@@ -170,25 +172,6 @@ impl<'a> AoBlock<'a> {
                     max_timestamp
                 ]
             ]
-        }
-    }
-
-    pub async fn find_blocks(&self, min_height: i64, max_timestamp: i64) -> Result<Vec<BlockSchema>, sqlx::error::Error> {
-        let query = AoBlock::create_select_blocks_query(min_height, max_timestamp);
-        let mut raw_query = sqlx::query_as::<_, BlockSchema>(&query.sql);
-        for params in query.parameters.iter() {
-            for param in params {
-                let _raw_query = raw_query
-                    .bind(param);
-                raw_query = _raw_query;
-            }            
-        }
-        
-        match raw_query
-            .fetch_all(self.sql_client.get_conn())
-            .await {
-                Ok(res) => Ok(res),
-                Err(e) => Err(e)
         }
     }
 
@@ -310,5 +293,101 @@ impl<'a> AoBlock<'a> {
             },
             Err(e) => Err(e)
         }
+    }
+}
+
+#[async_trait]
+impl FindBlockSchema for AoBlock {
+    async fn find_blocks(&self, min_height: i64, max_timestamp: i64) -> Result<Vec<BlockSchema>, sqlx::error::Error> {
+        let query = AoBlock::create_select_blocks_query(min_height, max_timestamp);
+        let mut raw_query = sqlx::query_as::<_, BlockSchema>(&query.sql);
+        for params in query.parameters.iter() {
+            for param in params {
+                let _raw_query = raw_query
+                    .bind(param);
+                raw_query = _raw_query;
+            }            
+        }
+        
+        match raw_query
+            .fetch_all(self.sql_client.get_conn())
+            .await {
+                Ok(res) => Ok(res),
+                Err(e) => Err(e)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{config::get_server_config_schema, domain::client::{ao_block::AoBlock, sqlite::{ConnGetter, Repository, SqliteClient}}};
+    use crate::tests::fixtures::log::get_logger;
+    use crate::tests::domain::client::test_sqlite::delete_db_files;    
+    use super::*;
+    
+    mod find_blocks {
+        use async_trait::async_trait;
+
+        use crate::domain::{dal::FindBlockSchema, model::model::BlockSchema};
+
+        struct MockFindBlocks;
+        #[async_trait]
+        impl FindBlockSchema for MockFindBlocks {
+            async fn find_blocks(&self, min_height: i64, max_timestamp: i64) -> Result<Vec<BlockSchema>, sqlx::error::Error> {
+                assert!(min_height == 123);
+                assert!(max_timestamp == 456);
+                Ok(
+                    vec![
+                        BlockSchema {
+                            height: 123,
+                            timestamp: 123
+                        },
+                        BlockSchema {
+                            height: 124,
+                            timestamp: 345
+                        },
+                        BlockSchema {
+                            height: 125,
+                            timestamp: 456
+                        }
+                    ]
+                )
+            }
+        }
+
+        #[tokio::test]
+        async fn test_find_the_blocks() {
+            let mock = MockFindBlocks;
+            match mock.find_blocks(123, 456).await {
+                Ok(res) => {
+                    assert!(res[0].height == 123);
+                    assert!(res[0].timestamp == 123);
+                    assert!(res[1].height == 124);
+                    assert!(res[1].timestamp == 345);
+                    assert!(res[2].height == 125);
+                    assert!(res[2].timestamp == 456);
+                },
+                Err(e) => panic!("test_find_blocks failed {:?}", e)
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fetch_page() {
+        let config = get_server_config_schema(true).as_ref().unwrap();
+        let db_file = "aoblock3.db";
+        let db_url = format!("sqlite://{}", db_file);
+
+        let sql_client_arc = Arc::new(SqliteClient::init(db_url.as_str(), get_logger(), Some(true), None).await);
+        let ao_block = AoBlock::new(sql_client_arc.clone());
+
+        let result = ao_block.fetch_page(1, 1232221, 10, &config.GRAPHQL_URL).await;
+        match result {
+            Ok(_) => (),
+            Err(e) => panic!("{:?}", e)
+        };
+
+        sql_client_arc.clone().get_conn().close().await;
+        delete_db_files(db_file);
     }
 }

@@ -1,3 +1,6 @@
+#[allow(unused)]
+use std::sync::Arc;
+
 #[tokio::test]
 async fn test_save_block() {
     use crate::domain::{client::{ao_block::AoBlock, sqlite::{ConnGetter, Repository, SqliteClient}}, model::model::BlockSchema};
@@ -7,8 +10,8 @@ async fn test_save_block() {
     let db_file = "aoblock1.db";
     let db_url = format!("sqlite://{}", db_file);
 
-    let client = SqliteClient::init(db_url.as_str(), get_logger(), Some(true), None).await;
-    let ao_block = AoBlock::new(&client);
+    let client = Arc::new(SqliteClient::init(db_url.as_str(), get_logger(), Some(true), None).await);
+    let ao_block = AoBlock::new(client.clone());
 
     let blocks = vec![
         BlockSchema { height: 22, timestamp: 324453 },
@@ -24,21 +27,21 @@ async fn test_save_block() {
         Err(e) => panic!("{:?}", e)
     }
 
-    client.get_conn().close().await;
+    client.clone().get_conn().close().await;
     delete_db_files(db_file);
 }
 
 #[tokio::test]
 async fn test_find_blocks() {
-    use crate::domain::{client::{ao_block::AoBlock, sqlite::{ConnGetter, Repository, SqliteClient}}, model::model::BlockSchema};
+    use crate::domain::{dal::FindBlockSchema, client::{ao_block::AoBlock, sqlite::{ConnGetter, Repository, SqliteClient}}, model::model::BlockSchema};
     use crate::tests::fixtures::log::get_logger;
     use crate::tests::domain::client::test_sqlite::delete_db_files;
-
+    
     let db_file = "aoblock2.db";
     let db_url = format!("sqlite://{}", db_file);
 
-    let client = SqliteClient::init(db_url.as_str(), get_logger(), Some(true), None).await;
-    let ao_block = AoBlock::new(&client);
+    let client = Arc::new(SqliteClient::init(db_url.as_str(), get_logger(), Some(true), None).await);
+    let ao_block = AoBlock::new(client.clone());
 
     let blocks = vec![
         BlockSchema { height: 22, timestamp: 324453 },
@@ -59,7 +62,7 @@ async fn test_find_blocks() {
         Err(e) => panic!("{:?}", e)
     }
 
-    client.get_conn().close().await;
+    client.clone().get_conn().close().await;
     delete_db_files(db_file);
 }
 
@@ -74,14 +77,14 @@ async fn test_load_blocks_meta() {
     let db_file = "aoblock3.db";
     let db_url = format!("sqlite://{}", db_file);
 
-    let client = SqliteClient::init(db_url.as_str(), get_logger(), Some(true), None).await;
-    let ao_block = AoBlock::new(&client);
+    let sql_client_arc = Arc::new(SqliteClient::init(db_url.as_str(), get_logger(), Some(true), None).await);
+    let ao_block = AoBlock::new(sql_client_arc.clone());
 
     match ao_block.load_blocks_meta(1, 1232221, &config.GRAPHQL_URL, 10).await {
-        Ok(res) => (),
+        Ok(_) => (),
         Err(e) => panic!("{:?}", e)
     };
 
-    client.get_conn().close().await;
+    sql_client_arc.clone().get_conn().close().await;
     delete_db_files(db_file);
 }

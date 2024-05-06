@@ -1,5 +1,5 @@
 mod config;
-mod dal;
+pub mod dal;
 mod utils {
     pub mod utils;
     pub mod error;

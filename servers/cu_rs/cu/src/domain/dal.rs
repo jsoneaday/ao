@@ -11,12 +11,12 @@ pub trait LoadTransactionMetaSchema {
 
 #[async_trait]
 pub trait LoadTransactionDataSchema {
-    async fn load_transaction_data_schema(tx_id: String) -> Vec<u8>;
+    async fn load_transaction_data(tx_id: String) -> Vec<u8>;
 }
 
 #[async_trait]
 pub trait LoadBlockMetaSchema {
-    async fn load_block_meta_schema(min: u64, max_time_stamp: u64) -> Vec<BlockSchema>;
+    async fn load_block_meta(min: u64, max_time_stamp: u64) -> Vec<BlockSchema>;
 }
 
 #[async_trait]
@@ -82,12 +82,12 @@ pub trait FindMessageBeforeSchema {
 
 #[async_trait]
 pub trait SaveBlockSchema {
-    async fn save_block_schema(block_schema: BlockSchema) -> Vec<u8>;
+    async fn save_block(block_schema: BlockSchema) -> Vec<u8>;
 }
 
 #[async_trait]
 pub trait FindBlockSchema {
-    async fn find_block_schema(min_height: u64, max_timestamp: u64) -> Vec<BlockSchema>;
+    async fn find_blocks(&self, min_height: i64, max_timestamp: i64) -> Result<Vec<BlockSchema>, sqlx::error::Error>;
 }
 
 #[async_trait]
