@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 #[tokio::test]
 async fn test_save_block() {
-    use crate::domain::{client::{ao_block::AoBlock, sqlite::{ConnGetter, Repository, SqliteClient}}, model::model::BlockSchema};
+    use crate::domain::{dal::SaveBlocksSchema, client::{ao_block::AoBlock, sqlite::{ConnGetter, Repository, SqliteClient}}, model::model::BlockSchema};
     use crate::tests::fixtures::log::get_logger;
     use crate::tests::domain::client::test_sqlite::delete_db_files;
 
@@ -18,12 +18,9 @@ async fn test_save_block() {
         BlockSchema { height: 56, timestamp: 435435 },
         BlockSchema { height: 8, timestamp: 678768 }
     ];
-    let result = ao_block.save_block(&blocks).await;
+    let result = ao_block.save_blocks(&blocks).await;
     match result {
-        Ok(res) => match res {
-            Some(res) => assert!(res.rows_affected() == blocks.len() as u64),
-            None => panic!("blocks parameter is empty")
-        },
+        Ok(_) => (),
         Err(e) => panic!("{:?}", e)
     }
 
@@ -33,7 +30,7 @@ async fn test_save_block() {
 
 #[tokio::test]
 async fn test_find_blocks() {
-    use crate::domain::{dal::FindBlockSchema, client::{ao_block::AoBlock, sqlite::{ConnGetter, Repository, SqliteClient}}, model::model::BlockSchema};
+    use crate::domain::{dal::{SaveBlocksSchema, FindBlocksSchema}, client::{ao_block::AoBlock, sqlite::{ConnGetter, Repository, SqliteClient}}, model::model::BlockSchema};
     use crate::tests::fixtures::log::get_logger;
     use crate::tests::domain::client::test_sqlite::delete_db_files;
     
@@ -47,12 +44,9 @@ async fn test_find_blocks() {
         BlockSchema { height: 22, timestamp: 324453 },
         BlockSchema { height: 23, timestamp: 324452 },
     ];
-    let result = ao_block.save_block(&blocks).await;
+    let result = ao_block.save_blocks(&blocks).await;
     match result {
-        Ok(res) => match res {
-            Some(_) => (),
-            None => panic!("blocks parameter is empty")
-        },
+        Ok(_) => (),
         Err(e) => panic!("{:?}", e)
     };
 

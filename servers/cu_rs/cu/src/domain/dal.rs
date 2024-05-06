@@ -81,12 +81,12 @@ pub trait FindMessageBeforeSchema {
 }
 
 #[async_trait]
-pub trait SaveBlockSchema {
-    async fn save_block(block_schema: BlockSchema) -> Vec<u8>;
+pub trait SaveBlocksSchema {
+    async fn save_blocks(&self, blocks: &Vec<BlockSchema>) -> Result<(), sqlx::error::Error>;
 }
 
 #[async_trait]
-pub trait FindBlockSchema {
+pub trait FindBlocksSchema {
     async fn find_blocks(&self, min_height: i64, max_timestamp: i64) -> Result<Vec<BlockSchema>, sqlx::error::Error>;
 }
 

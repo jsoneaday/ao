@@ -22,6 +22,12 @@ impl ToString for Sort {
     }
 }
 
+#[allow(unused)]
+pub struct Query {
+    pub sql: String,
+    pub parameters: Vec<Vec<i64>>
+}
+
 pub fn domain_config_schema<'a>(start_schema: StartDomainConfigSchema) -> &'a Result<DomainConfigSchema, ValidationError> {
     DOMAIN_CONFIG_SCHEMA.get_or_init(|| {
         start_schema.parse()
@@ -57,6 +63,15 @@ pub struct ModuleSchema {
 
 #[derive(FromRow)]
 pub struct BlockSchema {
+    pub height: i64,
+    pub timestamp: i64
+}
+
+#[allow(unused)]
+#[derive(FromRow)]
+pub struct BlockDocSchema {
+    /// id is actually the height value of BlockSchema
+    pub id: i64,
     pub height: i64,
     pub timestamp: i64
 }
