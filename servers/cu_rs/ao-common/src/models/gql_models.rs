@@ -95,5 +95,5 @@ pub struct Bundle {
 #[derive(Deserialize, Clone, Debug)]
 pub struct PageInfo {
     #[serde(rename = "hasNextPage")]
-    has_next_page: bool
+    pub has_next_page: bool
 }

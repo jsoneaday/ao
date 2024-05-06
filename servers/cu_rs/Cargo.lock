@@ -518,7 +518,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a08a6a09a789acc2408c037e15c4e89d1fa0a8a86a37d454ce2c72f860310971"
 dependencies = [
  "anyhow",
- "async-recursion",
+ "async-recursion 0.3.2",
  "async-stream",
  "async-trait",
  "avro-rs",
@@ -551,7 +551,7 @@ version = "0.2.0"
 source = "git+https://github.com/Irys-xyz/arweave-rs#79c913fbb06d8f1b4f254acbb6f53a08986c246b"
 dependencies = [
  "anyhow",
- "async-recursion",
+ "async-recursion 0.3.2",
  "async-stream",
  "async-trait",
  "avro-rs",
@@ -614,6 +614,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "async-recursion"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b43422f69d8ff38f95f1b2bb76517c91589a924d1559a0e935d7c8ce0274c11"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.58",
 ]
 
 [[package]]
@@ -1009,7 +1020,7 @@ checksum = "88e0b9b3b17e29094af34c04bfc6d0fe4e4cc79cec97f508a65e78e3de9ed472"
 dependencies = [
  "anyhow",
  "arweave-rs 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "async-recursion",
+ "async-recursion 0.3.2",
  "async-stream",
  "async-trait",
  "avro-rs",
@@ -1405,6 +1416,7 @@ dependencies = [
  "ao-common",
  "ao-scheduler-utils",
  "arweave-rs 0.2.0 (git+https://github.com/Irys-xyz/arweave-rs)",
+ "async-recursion 1.1.1",
  "async-trait",
  "base64-url",
  "bevy_reflect",

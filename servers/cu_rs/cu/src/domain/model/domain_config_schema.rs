@@ -280,14 +280,12 @@ impl StartSchemaParser<DomainConfigSchema> for StartDomainConfigSchema {
         };
         match parse_array_schema(self.RESTRICT_PROCESSES.clone()) {
             Ok(val) => {
-                println!("RESTRICT_PROCESSES {:?}", self.RESTRICT_PROCESSES.clone());
                 final_domain_config_schema.RESTRICT_PROCESSES = val;
             },
             Err(e) => return Err(e)
         };
         match parse_array_schema(self.ALLOW_PROCESSES.clone()) {
             Ok(val) => {
-                println!("ALLOW_PROCESSES {:?}", self.ALLOW_PROCESSES.clone());
                 final_domain_config_schema.ALLOW_PROCESSES = val;
             },
             Err(e) => return Err(e)

@@ -744,7 +744,7 @@ mod tests {
     #[test]
     fn test_get_server_config_schema() {
         match get_server_config_schema(false) {
-            Ok(schema) => println!("server schema {:?}", schema),
+            Ok(_) => (),
             Err(e) => panic!("{}", e)
         }
     }

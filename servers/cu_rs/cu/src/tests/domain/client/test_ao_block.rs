@@ -62,4 +62,3 @@ async fn test_find_blocks() {
     client.get_conn().close().await;
     delete_db_files(db_file);
 }
-
