@@ -62,3 +62,26 @@ async fn test_find_blocks() {
     client.get_conn().close().await;
     delete_db_files(db_file);
 }
+
+#[tokio::test]
+async fn test_load_blocks_meta() {
+    use crate::domain::client::{ao_block::AoBlock, sqlite::{ConnGetter, Repository, SqliteClient}};
+    use crate::tests::fixtures::log::get_logger;
+    use crate::tests::domain::client::test_sqlite::delete_db_files;
+    use crate::config::get_server_config_schema;
+
+    let config = get_server_config_schema(true).as_ref().unwrap();
+    let db_file = "aoblock3.db";
+    let db_url = format!("sqlite://{}", db_file);
+
+    let client = SqliteClient::init(db_url.as_str(), get_logger(), Some(true), None).await;
+    let ao_block = AoBlock::new(&client);
+
+    match ao_block.load_blocks_meta(1, 1232221, &config.GRAPHQL_URL, 10).await {
+        Ok(res) => (),
+        Err(e) => panic!("{:?}", e)
+    };
+
+    client.get_conn().close().await;
+    delete_db_files(db_file);
+}

@@ -300,42 +300,15 @@ impl<'a> AoBlock<'a> {
         }
     }
 
-    pub async fn load_blocks_meta(&self, min_height: i64, max_timestamp: i64, graphql_url: &str, page_size: i64) -> Result<Vec<Node>, CuErrors> {
+    pub async fn load_blocks_meta(&self, min_height: i64, max_timestamp: i64, graphql_url: &str, page_size: i64) -> Result<Vec<gql_return_types::Node>, CuErrors> {
         match self.fetch_all_pages(min_height, max_timestamp, page_size, graphql_url).await {
             Ok(res) => {
                 Ok(res.edges.iter().map(|edge| gql_return_types::Node {
                     height: edge.node.height,
                     timestamp: edge.node.timestamp * 1000
-                }))
+                }).collect())
             },
             Err(e) => Err(e)
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::{config::get_server_config_schema, domain::client::{ao_block::AoBlock, sqlite::{ConnGetter, Repository, SqliteClient}}};
-    use crate::tests::fixtures::log::get_logger;
-    use crate::tests::domain::client::test_sqlite::delete_db_files;
-    use super::*;
-
-    #[tokio::test]
-    async fn test_fetch_page() {
-        let config = get_server_config_schema(true).as_ref().unwrap();
-        let db_file = "aoblock3.db";
-        let db_url = format!("sqlite://{}", db_file);
-
-        let client = SqliteClient::init(db_url.as_str(), get_logger(), Some(true), None).await;
-        let ao_block = AoBlock::new(&client);
-
-        let result = ao_block.fetch_page(1, 1232221, 10, &config.GRAPHQL_URL).await;
-        match result {
-            Ok(_) => (),
-            Err(e) => panic!("{:?}", e)
-        };
-
-        client.get_conn().close().await;
-        delete_db_files(db_file);
     }
 }
