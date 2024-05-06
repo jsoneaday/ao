@@ -324,50 +324,74 @@ mod tests {
     use crate::tests::fixtures::log::get_logger;
     use crate::tests::domain::client::test_sqlite::delete_db_files;    
     use super::*;
+    use crate::domain::{dal::FindBlockSchema, model::model::BlockSchema};
     
     mod find_blocks {
-        use async_trait::async_trait;
+        use super::*;
 
-        use crate::domain::{dal::FindBlockSchema, model::model::BlockSchema};
+        mod find_the_blocks {
+            use super::*;
 
-        struct MockFindBlocks;
-        #[async_trait]
-        impl FindBlockSchema for MockFindBlocks {
-            async fn find_blocks(&self, min_height: i64, max_timestamp: i64) -> Result<Vec<BlockSchema>, sqlx::error::Error> {
-                assert!(min_height == 123);
-                assert!(max_timestamp == 456);
-                Ok(
-                    vec![
-                        BlockSchema {
-                            height: 123,
-                            timestamp: 123
-                        },
-                        BlockSchema {
-                            height: 124,
-                            timestamp: 345
-                        },
-                        BlockSchema {
-                            height: 125,
-                            timestamp: 456
-                        }
-                    ]
-                )
+            struct MockFindBlocks;
+            #[async_trait]
+            impl FindBlockSchema for MockFindBlocks {
+                async fn find_blocks(&self, min_height: i64, max_timestamp: i64) -> Result<Vec<BlockSchema>, sqlx::error::Error> {
+                    assert!(min_height == 123);
+                    assert!(max_timestamp == 456);
+                    Ok(
+                        vec![
+                            BlockSchema {
+                                height: 123,
+                                timestamp: 123
+                            },
+                            BlockSchema {
+                                height: 124,
+                                timestamp: 345
+                            },
+                            BlockSchema {
+                                height: 125,
+                                timestamp: 456
+                            }
+                        ]
+                    )
+                }
+            }
+
+            #[tokio::test]
+            async fn test_find_the_blocks() {
+                let mock = MockFindBlocks;
+                match mock.find_blocks(123, 456).await {
+                    Ok(res) => {
+                        assert!(res[0].height == 123);
+                        assert!(res[0].timestamp == 123);
+                        assert!(res[1].height == 124);
+                        assert!(res[1].timestamp == 345);
+                        assert!(res[2].height == 125);
+                        assert!(res[2].timestamp == 456);
+                    },
+                    Err(e) => panic!("test_find_blocks failed {:?}", e)
+                }
             }
         }
 
-        #[tokio::test]
-        async fn test_find_the_blocks() {
-            let mock = MockFindBlocks;
-            match mock.find_blocks(123, 456).await {
-                Ok(res) => {
-                    assert!(res[0].height == 123);
-                    assert!(res[0].timestamp == 123);
-                    assert!(res[1].height == 124);
-                    assert!(res[1].timestamp == 345);
-                    assert!(res[2].height == 125);
-                    assert!(res[2].timestamp == 456);
-                },
-                Err(e) => panic!("test_find_blocks failed {:?}", e)
+        mod return_an_empty_array_if_no_blocks_are_found {
+            use super::*;
+
+            struct MockFindBlocks;
+            #[async_trait]
+            impl FindBlockSchema for MockFindBlocks {
+                async fn find_blocks(&self, _min_height: i64, _max_timestamp: i64) -> Result<Vec<BlockSchema>, sqlx::error::Error> {
+                    Ok(vec![])
+                }
+            }
+
+            #[tokio::test]
+            async fn test_return_an_empty_array_if_no_blocks_are_found() {
+                let mock = MockFindBlocks;
+                match mock.find_blocks(123, 456).await {
+                    Ok(res) => assert!(res.len() == 0),
+                    Err(e) => panic!("{:?}", e)
+                }
             }
         }
     }

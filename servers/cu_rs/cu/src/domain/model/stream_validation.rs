@@ -46,6 +46,8 @@ pub struct EventEmitter;
 pub struct Options {
     pub end: Option<bool>
 }
+
+#[allow(unused)]
 pub trait GenericEventEmitter<T> {
     fn pipe(
         destination: T,
