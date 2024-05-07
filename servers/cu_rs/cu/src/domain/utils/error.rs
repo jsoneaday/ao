@@ -17,11 +17,30 @@ impl Display for SchemaValidationError {
     }
 }
 
+#[derive(Debug)]
+pub struct HttpError {
+    pub status: u32,
+    pub message: String
+}
+
+impl Error for HttpError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        None
+    }
+}
+
+impl Display for HttpError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)     
+    }
+}
+
 #[allow(unused)]
 #[derive(Debug)]
 pub enum CuErrors {
     BlockMeta(Option<Box<dyn Error + 'static + Send>>),
-    SchemaValidation(SchemaValidationError)
+    SchemaValidation(SchemaValidationError),
+    HttpStatus(HttpError)
 }
 
 impl Error for CuErrors {
@@ -33,7 +52,8 @@ impl Error for CuErrors {
                     None => None
                 }
             },
-            Self::SchemaValidation(err) => Some(err)
+            Self::SchemaValidation(err) => Some(err),
+            Self::HttpStatus(err) => Some(err)
         }
     }
 }
@@ -47,7 +67,8 @@ impl Display for CuErrors {
                     "".to_string()
                 }
             ),
-            Self::SchemaValidation(err) => write!(f, "{}", err.message)
+            Self::SchemaValidation(err) => write!(f, "{}", err.message),
+            Self::HttpStatus(err) => write!(f, "{}", err.message)
         }        
     }
 }

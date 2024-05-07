@@ -48,12 +48,12 @@ pub trait EvaluatorSchema {
 
 #[async_trait]
 pub trait FindEvaluationSchema {
-    async fn find_evaluation_schema(process_id: String, to: Option<u64>, ordinate: Option<String>, cron: Option<String>) -> EvaluationSchema;
+    async fn find_evaluation(process_id: String, to: Option<u64>, ordinate: Option<String>, cron: Option<String>) -> EvaluationSchema;
 }
 
 #[async_trait]
 pub trait SaveEvaluationSchema {
-    async fn save_evaluation_schema(evaluation_schema: EvaluationSchemaExtended) -> Vec<u8>;
+    async fn save_evaluation(evaluation_schema: EvaluationSchemaExtended) -> Vec<u8>;
 }
 
 #[async_trait]

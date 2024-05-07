@@ -3,9 +3,24 @@ use async_trait::async_trait;
 use ao_common::{models::gql_models::{GraphqlInput, PageInfo}, network::utils::get_content_type_headers};
 use async_recursion::async_recursion;
 use serde::Serialize;
-use sqlx::Sqlite;
-use crate::domain::{dal::{FindBlocksSchema, LoadBlocksMetaSchema, SaveBlocksSchema}, maths::increment, model::model::{gql_return_types, BlockDocSchema, BlockSchema, Query}, utils::error::CuErrors};
+use sqlx::{FromRow, Sqlite};
+use crate::domain::{dal::{FindBlocksSchema, LoadBlocksMetaSchema, SaveBlocksSchema}, maths::increment, model::model::{gql_return_types, BlockSchema}, utils::error::CuErrors};
 use super::sqlite::{ConnGetter, SqliteClient, BLOCKS_TABLE};
+
+#[allow(unused)]
+pub struct Query {
+    pub sql: String,
+    pub parameters: Vec<Vec<i64>>
+}
+
+#[allow(unused)]
+#[derive(FromRow)]
+pub struct BlockDocSchema {
+    /// id is actually the height value of BlockSchema
+    pub id: i64,
+    pub height: i64,
+    pub timestamp: i64
+}
 
 #[derive(Serialize)]
 struct GqlQueryVariables {
@@ -46,7 +61,7 @@ impl AoBlock {
     // todo: if SqliteClient isn't always needed make optional
     pub fn new(sql_client: Arc<SqliteClient>) -> Self {
         AoBlock { 
-            sql_client: Arc::clone(&sql_client),
+            sql_client,
             client: reqwest::Client::new()
         }
     }
@@ -237,9 +252,7 @@ impl FindBlocksSchema for AoBlock {
             }            
         }
         
-        match raw_query
-            .fetch_all(self.sql_client.get_conn())
-            .await {
+        match raw_query.fetch_all(self.sql_client.get_conn()).await {
                 Ok(res) => Ok(res),
                 Err(e) => Err(e)
         }

@@ -4,7 +4,7 @@ use valid::ValidationError;
 use once_cell::sync::OnceCell;
 use super::domain_config_schema::{DomainConfigSchema, StartDomainConfigSchema};
 use super::parse_schema::StartSchemaParser;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 static DOMAIN_CONFIG_SCHEMA: OnceCell<Result<DomainConfigSchema, ValidationError>> = OnceCell::new();
 
@@ -20,12 +20,6 @@ impl ToString for Sort {
             Sort::Desc => "DESC".to_string()
         }
     }
-}
-
-#[allow(unused)]
-pub struct Query {
-    pub sql: String,
-    pub parameters: Vec<Vec<i64>>
 }
 
 pub fn domain_config_schema<'a>(start_schema: StartDomainConfigSchema) -> &'a Result<DomainConfigSchema, ValidationError> {
@@ -67,15 +61,6 @@ pub struct BlockSchema {
     pub timestamp: i64
 }
 
-#[allow(unused)]
-#[derive(FromRow)]
-pub struct BlockDocSchema {
-    /// id is actually the height value of BlockSchema
-    pub id: i64,
-    pub height: i64,
-    pub timestamp: i64
-}
-
 pub type TimestampSchema = BlockSchema;
 
 #[allow(unused)]
@@ -108,7 +93,7 @@ pub struct ProcessSchemaWithoutId {
     block: BlockSchema
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "PascalCase")]
 pub struct Output {
     memory: Option<Vec<u8>>,
@@ -124,11 +109,11 @@ pub struct Output {
 #[serde(rename_all = "camelCase")]
 pub struct EvaluationSchema {
     process_id: String,
-    message_id: String,
-    deep_hash: String,
+    message_id: Option<String>,
+    deep_hash: Option<String>,
     timestamp: i64,
-    epoch: i64,
-    nonce: i64,
+    epoch: Option<i64>,
+    nonce: Option<i64>,
     ordinate: String,
     block_height: i64,
     cron: Option<String>,
