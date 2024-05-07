@@ -4,7 +4,7 @@ use ao_common::{models::gql_models::{GraphqlInput, PageInfo}, network::utils::ge
 use async_recursion::async_recursion;
 use serde::Serialize;
 use sqlx::Sqlite;
-use crate::domain::{dal::{FindBlocksSchema, SaveBlocksSchema}, maths::increment, model::model::{BlockSchema, BlockDocSchema, Query}, utils::error::CuErrors};
+use crate::domain::{dal::{FindBlocksSchema, LoadBlocksMetaSchema, SaveBlocksSchema}, maths::increment, model::model::{gql_return_types, BlockDocSchema, BlockSchema, Query}, utils::error::CuErrors};
 use super::sqlite::{ConnGetter, SqliteClient, BLOCKS_TABLE};
 
 #[derive(Serialize)]
@@ -13,39 +13,6 @@ struct GqlQueryVariables {
     min: i64,
     /// page_size
     limit: i64
-}
-
-mod gql_return_types {
-    use ao_common::models::gql_models::PageInfo;
-    use serde::Deserialize;
-
-    #[derive(Deserialize, Debug)]
-    pub struct DataBlocks {
-        pub data: Blocks
-    }
-
-    #[derive(Deserialize, Debug)]
-    pub struct Blocks {
-        pub blocks: BlocksTransactions
-    }
-
-    #[derive(Deserialize, Debug)]
-    pub struct BlocksTransactions {
-        #[serde(rename = "pageInfo")]
-        pub page_info: Option<PageInfo>,
-        pub edges: Vec<Edge>
-    }
-
-    #[derive(Deserialize, Debug, Clone)]
-    pub struct Edge {
-        pub node: Node
-    }
-
-    #[derive(Deserialize, Debug, Clone)]
-    pub struct Node {
-        pub timestamp: i64,
-        pub height: i64
-    }
 }
 
 #[allow(unused)]
@@ -178,7 +145,8 @@ impl AoBlock {
     }   
 
     #[async_recursion]
-    async fn may_fetch_next(&self, graphql_url: &str, page_size: i64, page_info: PageInfo, edges: &Vec<gql_return_types::Edge>, max_timestamp: i64) -> Result<gql_return_types::BlocksTransactions, CuErrors> {
+    async fn may_fetch_next(&self, graphql_url: &str, page_size: i64, page_info: PageInfo, edges: &Vec<gql_return_types::Edge>, max_timestamp: i64) -> 
+        Result<gql_return_types::BlocksTransactions, CuErrors> {
         // /**
         //  * HACK to incrementally fetch the correct range of blocks with only
         //  * a timestamp as the right most limit.
@@ -191,21 +159,23 @@ impl AoBlock {
         //  * We then slice off the results in the page, not within our range.
         //  * So we overfetch a little on the final page, but at MOST pageSize - 1
         //  */
-      let mut surpassed_max_timestamp_idx: i64 = 0;
+      let mut surpassed_max_timestamp_idx: i64 = -1;
       for i in 0..edges.len() {
         if edges[i].node.timestamp > max_timestamp {
-            surpassed_max_timestamp_idx = 1;
+            surpassed_max_timestamp_idx = i as i64;
             break;
         }        
       };
 
       if surpassed_max_timestamp_idx != -1 {
+        println!("surpassed_max_timestamp_idx != -1");
         return Ok(gql_return_types::BlocksTransactions {
             page_info: Some(page_info),
             edges: edges[0..surpassed_max_timestamp_idx as usize].to_vec()
         });
       }
-      if page_info.has_next_page {
+      if !page_info.has_next_page {
+        println!("does not have has_next_page");
         return Ok(gql_return_types::BlocksTransactions {
             page_info: Some(page_info.clone()),
             edges: edges.to_vec()
@@ -214,8 +184,10 @@ impl AoBlock {
 
       match self.fetch_page(edges.iter().last().unwrap().node.height, max_timestamp, page_size, graphql_url).await {
         Ok(res) => {
-            match self.may_fetch_next(graphql_url, page_size, page_info.clone(), &res.data.blocks.edges, max_timestamp).await {
+            //println!("start may_fetch_next");
+            match self.may_fetch_next(graphql_url, page_size, res.data.blocks.page_info.clone().unwrap(), &res.data.blocks.edges, max_timestamp).await {
                 Ok(mut res) => {
+                    println!("next may_fetch_next");
                     let mut cloned_edges = edges.to_vec();
                     cloned_edges.append(&mut res.edges);
                     return Ok(gql_return_types::BlocksTransactions {
@@ -223,10 +195,16 @@ impl AoBlock {
                         edges: cloned_edges
                     });
                 },
-                Err(e) => Err(e)
+                Err(e) => {
+                    println!("error may_fetch_next");
+                    Err(e)
+                }
             }            
         },
-        Err(e) => Err(e)
+        Err(e) => {
+            println!("error may_fetch_next");
+            Err(e)
+        }
       }
     }
 
@@ -240,18 +218,6 @@ impl AoBlock {
                     Ok(res) => Ok(res),
                     Err(e) => Err(e)
                 }
-            },
-            Err(e) => Err(e)
-        }
-    }
-
-    pub async fn load_blocks_meta(&self, min_height: i64, max_timestamp: i64, graphql_url: &str, page_size: i64) -> Result<Vec<gql_return_types::Node>, CuErrors> {
-        match self.fetch_all_pages(min_height, max_timestamp, page_size, graphql_url).await {
-            Ok(res) => {
-                Ok(res.edges.iter().map(|edge| gql_return_types::Node {
-                    height: edge.node.height,
-                    timestamp: edge.node.timestamp * 1000
-                }).collect())
             },
             Err(e) => Err(e)
         }
@@ -306,9 +272,25 @@ impl SaveBlocksSchema for AoBlock {
     }
 }
 
+#[async_trait]
+impl LoadBlocksMetaSchema for AoBlock {
+    async fn load_blocks_meta(&self, min_height: i64, max_timestamp: i64, graphql_url: &str, page_size: i64) -> Result<Vec<gql_return_types::Node>, CuErrors> {
+        match self.fetch_all_pages(min_height, max_timestamp, page_size, graphql_url).await {
+            Ok(res) => {                
+                Ok(res.edges.iter().map(|edge| gql_return_types::Node {
+                    height: edge.node.height,
+                    timestamp: edge.node.timestamp * 1000
+                }).collect())
+            },
+            Err(e) => Err(e)
+        }
+    }
+}
+
+// some tests in integration folder
 #[cfg(test)]
 mod tests {
-    use crate::{config::get_server_config_schema, domain::client::{ao_block::AoBlock, sqlite::{ConnGetter, Repository, SqliteClient}}};
+    use crate::domain::client::{ao_block::AoBlock, sqlite::{ConnGetter, Repository, SqliteClient}};
     use crate::tests::fixtures::log::get_logger;
     use crate::tests::domain::client::test_sqlite::delete_db_files;    
     use super::*;
@@ -476,7 +458,7 @@ mod tests {
 
             #[tokio::test]
             async fn test_should_do_nothing_if_no_blocks_to_save() {
-                let db_file = "aoblock3.db";
+                let db_file = "aoblockunit1.db";
                 let db_url = format!("sqlite://{}", db_file);
 
                 let sql_client_arc = Arc::new(SqliteClient::init(db_url.as_str(), get_logger(), Some(true), None).await);
@@ -492,24 +474,5 @@ mod tests {
                 delete_db_files(db_file);
             }
         }
-    }
-
-    #[tokio::test]
-    async fn test_fetch_page() {
-        let config = get_server_config_schema(true).as_ref().unwrap();
-        let db_file = "aoblock3.db";
-        let db_url = format!("sqlite://{}", db_file);
-
-        let sql_client_arc = Arc::new(SqliteClient::init(db_url.as_str(), get_logger(), Some(true), None).await);
-        let ao_block = AoBlock::new(sql_client_arc.clone());
-
-        let result = ao_block.fetch_page(1, 1232221, 10, &config.GRAPHQL_URL).await;
-        match result {
-            Ok(_) => (),
-            Err(e) => panic!("{:?}", e)
-        };
-
-        sql_client_arc.clone().get_conn().close().await;
-        delete_db_files(db_file);
     }
 }

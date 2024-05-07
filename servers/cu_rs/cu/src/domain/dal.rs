@@ -2,6 +2,8 @@ use crate::domain::model::model::{BlockSchema, EvaluationSchema, EvaluationSchem
 use async_trait::async_trait;
 use reqwest::Url;
 
+use super::{model::model::gql_return_types, utils::error::CuErrors};
+
 // todo: the Vec<u8> types might be better as serde Value types?
 
 #[async_trait]
@@ -15,8 +17,8 @@ pub trait LoadTransactionDataSchema {
 }
 
 #[async_trait]
-pub trait LoadBlockMetaSchema {
-    async fn load_block_meta(min: u64, max_time_stamp: u64) -> Vec<BlockSchema>;
+pub trait LoadBlocksMetaSchema {
+    async fn load_blocks_meta(&self, min_height: i64, max_time_stamp: i64, graphql_url: &str, page_size: i64) -> Result<Vec<gql_return_types::Node>, CuErrors>;
 }
 
 #[async_trait]

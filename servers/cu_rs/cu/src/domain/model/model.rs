@@ -168,3 +168,36 @@ pub trait StreamSchema {
 pub struct ProcessUrl {
     url: String
 }
+
+pub mod gql_return_types {
+    use ao_common::models::gql_models::PageInfo;
+    use serde::Deserialize;
+
+    #[derive(Deserialize, Debug)]
+    pub struct DataBlocks {
+        pub data: Blocks
+    }
+
+    #[derive(Deserialize, Debug)]
+    pub struct Blocks {
+        pub blocks: BlocksTransactions
+    }
+
+    #[derive(Deserialize, Debug)]
+    pub struct BlocksTransactions {
+        #[serde(rename = "pageInfo")]
+        pub page_info: Option<PageInfo>,
+        pub edges: Vec<Edge>
+    }
+
+    #[derive(Deserialize, Debug, Clone)]
+    pub struct Edge {
+        pub node: Node
+    }
+
+    #[derive(Deserialize, Debug, Clone)]
+    pub struct Node {
+        pub timestamp: i64,
+        pub height: i64
+    }
+}

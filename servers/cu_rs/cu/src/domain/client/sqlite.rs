@@ -2,6 +2,7 @@ use sqlx::migrate::MigrateDatabase;
 use sqlx::{FromRow, Pool, Sqlite, SqlitePool};
 use ao_common::domain::dal::Log;
 use std::os::unix::fs::MetadataExt;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use async_trait::async_trait;
@@ -222,17 +223,21 @@ async fn setup_wal_checkpoint(options: SqliteConnectOptions, url: &str, bootstra
         let _url = url.to_string();
         tokio::spawn(async move {
             tokio::time::sleep(Duration::from_secs(5)).await;
-
+            
             let conn = SqlitePool::connect_with(options).await.unwrap();
-
             _ = conn.execute("PRAGMA encoding = 'UTF-8';").await;
 
-            let result = metadata(format!("{}-wal", _url)).unwrap();
+            let mut path = PathBuf::new();
+            path.push(_url.replace("sqlite://", ""));
+            let current_dir = std::env::current_dir().unwrap();
+            path = current_dir.join(path);
+            let result = metadata(format!("{}-wal", path.to_string_lossy())).unwrap();
             if result.size() > _wal_limit {
                 let mut tx = conn.begin().await.unwrap();
                 _ = tx.execute("PRAGMA wal_checkpoint(RESTART)").await;
                 _ = tx.commit().await;
             }
+            
             conn.close().await;
         });
     }
