@@ -270,15 +270,11 @@ impl SaveBlocksSchema for AoBlock {
         let mut raw_query = sqlx::query::<Sqlite>(&query.sql);
         for params in query.parameters.iter() {
             for param in params {
-                let _raw_query = raw_query
-                    .bind(param);
-                raw_query = _raw_query;
+                raw_query = raw_query.bind(param);
             }            
         }
         
-        match raw_query
-            .execute(self.sql_client.get_conn())
-            .await {
+        match raw_query.execute(self.sql_client.get_conn()).await {
                 Ok(res) => Ok(()),
                 Err(e) => Err(e)
         }

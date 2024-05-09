@@ -87,6 +87,7 @@ async fn test_load_blocks_meta() {
 
 //#[tokio::test]
 // todo: not sure why this does not work need to fix later
+#[allow(unused)]
 async fn test_load_the_block_data_across_multiple_pages() {
     use crate::domain::client::{ao_block::AoBlock, sqlite::{ConnGetter, Repository, SqliteClient}};
     use crate::tests::fixtures::log::get_logger;

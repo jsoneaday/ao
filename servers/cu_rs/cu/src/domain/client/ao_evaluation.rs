@@ -270,18 +270,15 @@ impl SaveEvaluationSchema for AoEvaluation {
         match AoEvaluation::create_insert_queries(evaluation) {
             Ok(statements) => {
                 let mut tx = self.sql_client.get_conn().begin().await.unwrap();
-        
+                
                 for statement in statements.iter() {
                     let mut query = sqlx::query::<Sqlite>(&statement.sql);
                     for param in statement.parameters.iter() {
                         query = query.bind(param);
                     }
-                    match query.fetch_all(&mut *tx).await {
-                        Ok(res) => {
-                            println!("res 0{:?}", res[0].columns());
-                            println!("res 1{:?}", res[1].columns());
-                            return Ok(())
-                        },
+                    let result = query.execute(&mut *tx).await;
+                    match result {
+                        Ok(_) => (),
                         Err(e) => {
                             _ = tx.rollback().await;
                             return Err(CuErrors::DatabaseError(e));
@@ -519,5 +516,15 @@ mod tests {
                 }
             }
         }
+
+        // mod find_evaluations {
+        //     use super::*;
+
+        //     mod return_the_list_of_all_cron_evaluations {
+        //         use super::*;
+
+
+        //     }
+        // }
     }
 }
