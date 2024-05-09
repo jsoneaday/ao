@@ -53,7 +53,7 @@ pub trait FindEvaluationSchema {
 
 #[async_trait]
 pub trait SaveEvaluationSchema {
-    async fn save_evaluation(evaluation_schema: EvaluationSchemaExtended) -> Vec<u8>;
+    async fn save_evaluation(&self, evaluation_schema: EvaluationSchemaExtended) -> Result<(), CuErrors> ;
 }
 
 #[async_trait]

@@ -40,7 +40,8 @@ impl Display for HttpError {
 pub enum CuErrors {
     BlockMeta(Option<Box<dyn Error + 'static + Send>>),
     SchemaValidation(SchemaValidationError),
-    HttpStatus(HttpError)
+    HttpStatus(HttpError),
+    DatabaseError(sqlx::error::Error)
 }
 
 impl Error for CuErrors {
@@ -53,7 +54,8 @@ impl Error for CuErrors {
                 }
             },
             Self::SchemaValidation(err) => Some(err),
-            Self::HttpStatus(err) => Some(err)
+            Self::HttpStatus(err) => Some(err),
+            Self::DatabaseError(err) => Some(err)
         }
     }
 }
@@ -68,7 +70,8 @@ impl Display for CuErrors {
                 }
             ),
             Self::SchemaValidation(err) => write!(f, "{}", err.message),
-            Self::HttpStatus(err) => write!(f, "{}", err.message)
+            Self::HttpStatus(err) => write!(f, "{}", err.message),
+            Self::DatabaseError(err) => write!(f, "{}", err.to_string())
         }        
     }
 }

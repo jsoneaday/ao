@@ -13,3 +13,17 @@ impl IsNoneOrEmpty for Option<String> {
         false
     }
 }
+
+pub fn get_empty_string(value: Option<String>) -> String {
+    if value.is_some() { 
+        return value.unwrap();
+    }
+    "".to_string()
+}
+
+pub fn get_number_string(value: Option<i64>) -> String {
+    if value.is_none() {
+        return "".to_string();
+    }
+    value.unwrap().to_string()
+}

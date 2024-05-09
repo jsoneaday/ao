@@ -93,10 +93,10 @@ pub struct ProcessSchemaWithoutId {
     block: BlockSchema
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "PascalCase")]
 pub struct Output {
-    memory: Option<Vec<u8>>,
+    memory: Option<String>,
     messages: Option<Vec<u8>>,
     assignments: Option<Vec<u8>>,
     spawns: Option<Vec<u8>>,
@@ -105,37 +105,69 @@ pub struct Output {
     error: Option<Vec<u8>>
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct EvaluationSchema {
-    process_id: String,
-    message_id: Option<String>,
-    deep_hash: Option<String>,
-    timestamp: i64,
-    epoch: Option<i64>,
-    nonce: Option<i64>,
-    ordinate: String,
-    block_height: i64,
-    cron: Option<String>,
-    evaluated_at: DateTime<Utc>,
-    output: Output
+    /**
+    * the id of the process that the message was performed upon
+    */
+    pub process_id: String,
+    /**
+    * Cron messages do not have a messageId
+    * and so can be undefined
+    */
+    pub message_id: Option<String>,
+    /**
+    * Only forwarded messages have a deepHash
+    */
+    pub deep_hash: Option<String>,
+    pub timestamp: i64,
+    /**
+    * Cron messages do not have an epoch
+    */
+    pub epoch: Option<i64>,
+    /**
+    * Cron messages do not have a nonce
+    */
+    pub nonce: Option<i64>,
+    /**
+    * Used for ordering the evaluation stream and results in the CU
+    *
+    * For a Scheduled Message, this will always simply be it's nonce.
+    * For a Cron Message, this will be the nonce of the most recent Scheduled Message.
+    */
+    pub ordinate: i64,
+    pub block_height: i64,
+    /**
+    * Scheduled messages do not have a cron,
+    * and so can be undefined
+    */
+    pub cron: Option<String>,
+    /**
+    * The date when this record was created, effectively
+    * when this record was evaluated
+    *
+    * not to be confused with when the transaction was placed on chain
+    */
+    pub evaluated_at: DateTime<Utc>,
+    pub output: Output
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EvaluationSchemaExtended {
-    process_id: String,
-    message_id: String,
-    deep_hash: Option<String>,
-    timestamp: i64,
-    epoch: i64,
-    nonce: i64,
-    ordinate: String,
-    block_height: i64,
-    cron: Option<String>,
-    evaluated_at: DateTime<Utc>,
-    output: Output,
-    is_assignment: bool
+    pub process_id: String,
+    pub message_id: Option<String>,
+    pub deep_hash: Option<String>,
+    pub timestamp: i64,
+    pub epoch: Option<i64>,
+    pub nonce: Option<i64>,
+    pub ordinate: i64,
+    pub block_height: i64,
+    pub cron: Option<String>,
+    pub evaluated_at: DateTime<Utc>,
+    pub output: Option<Output>,
+    pub is_assignment: bool
 }
 
 #[allow(unused)]
