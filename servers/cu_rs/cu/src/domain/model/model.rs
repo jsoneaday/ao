@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use serde_json::Value;
 use sqlx::prelude::FromRow;
 use valid::ValidationError;
 use once_cell::sync::OnceCell;
@@ -150,7 +151,7 @@ pub struct EvaluationSchema {
     * not to be confused with when the transaction was placed on chain
     */
     pub evaluated_at: DateTime<Utc>,
-    pub output: Option<Output>
+    pub output: Value
 }
 
 #[derive(Serialize)]
@@ -166,7 +167,7 @@ pub struct EvaluationSchemaExtended {
     pub block_height: i64,
     pub cron: Option<String>,
     pub evaluated_at: DateTime<Utc>,
-    pub output: Option<Output>,
+    pub output: Value,
     pub is_assignment: bool
 }
 

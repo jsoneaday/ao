@@ -1,10 +1,11 @@
 use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sqlx::sqlite::SqliteRow;
 use sqlx::{FromRow, Row, Sqlite};
 use crate::domain::dal::{FindEvaluationSchema, SaveEvaluationSchema};
-use crate::domain::model::model::{EvaluationSchema, EvaluationSchemaExtended, Output};
+use crate::domain::model::model::{EvaluationSchema, EvaluationSchemaExtended};
 use crate::domain::strings::{get_empty_string, get_number_string};
 use crate::domain::utils::error::{CuErrors, HttpError, SchemaValidationError};
 use super::sqlite::{SqliteClient, ConnGetter, EVALUATIONS_TABLE, MESSAGES_TABLE};
@@ -32,7 +33,7 @@ pub struct EvaluationDocSchema {
     block_height: i64,
     cron: Option<String>,
     evaluated_at: DateTime<Utc>,
-    output: Option<Output>
+    output: Value
 }
 
 /// Note: each field should have min length 1
@@ -302,6 +303,7 @@ impl FindEvaluationSchema for AoEvaluation {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     mod ao_evaluation {
         use super::*;
@@ -310,26 +312,10 @@ mod tests {
             use super::*;
             use lazy_static::lazy_static;
 
-            mod find_the_evaluation {
+            mod find_the_evaluation {                
                 use super::*;
 
                 lazy_static! {
-                    static ref MOCK_EVAL: Arc<EvaluationSchema> = {
-                        Arc::new(EvaluationSchema {
-                            // id: "process-123,1702677252111",
-                            timestamp: 1702677252111,
-                            ordinate: 1,
-                            block_height: 1234,
-                            process_id: "process-123".to_string(),
-                            message_id: Some("message-123".to_string()),
-                            output: None,
-                            evaluated_at: Utc::now(),
-                            deep_hash: None,
-                            epoch: None,
-                            nonce: None,
-                            cron: None
-                        })
-                    };
                     static ref EVALUATED_AT: Arc<DateTime<Utc>> = {
                         Arc::new(Utc::now())
                     };
@@ -344,7 +330,6 @@ mod tests {
                         assert!(query.parameters[0].as_str() == "process-123,1702677252111,1");
 
                         Ok(EvaluationSchema {
-                            // id: "process-123,1702677252111,1".to_string(),
                             process_id: "process-123".to_string(),
                             message_id: Some("message-123".to_string()),
                             deep_hash: Some("deepHash-123".to_string()),
@@ -355,7 +340,7 @@ mod tests {
                             block_height: 1234,
                             cron: None,
                             evaluated_at: EVALUATED_AT.as_ref().clone(),
-                            output: None // serde_json::to_string(&MockOutput { Messages: vec![Foo { foo: "bar".to_string() }] }).unwrap()
+                            output: json!({ "Messages": [{ "foo": "bar" }] })
                         })
                     }
                 }
@@ -375,7 +360,7 @@ mod tests {
                             assert!(res.block_height == 1234);
                             assert!(res.cron == None);
                             assert!(res.evaluated_at == EVALUATED_AT.as_ref().clone());
-                            // assert!(res.output == "1234".to_string());
+                            assert!(res.output == json!({ "Messages": [{ "foo": "bar" }] }));
                         },
                         Err(e) => panic!("{}", e)
                     }
@@ -414,7 +399,7 @@ mod tests {
                                 assert!(first_query.parameters[8].as_str() == "1234");
                                 assert!(first_query.parameters[9].as_str() == "");
                                 assert!(first_query.parameters[10] == EVALUATED_AT.clone().timestamp_millis().to_string());
-                                // todo: skipping output as not sure how to test something that effectively is of type any
+                                assert!(first_query.parameters[11] == serde_json::to_string(&json!({ "Messages": [{ "foo": "bar" }] })).unwrap());
         
                                 let second_query = &statements[1];
                                 assert!(second_query.parameters[0].as_str() == "deepHash-123");
@@ -441,7 +426,7 @@ mod tests {
                         cron: None,
                         process_id: "process-123".to_string(),
                         message_id: Some("message-123".to_string()),
-                        output: None,
+                        output: json!({ "Messages": [{ "foo": "bar" }] }),
                         evaluated_at: *EVALUATED_AT.clone()
                     };
 
@@ -467,7 +452,7 @@ mod tests {
                                 assert!(first_query.parameters[8].as_str() == "1234");
                                 assert!(first_query.parameters[9].as_str() == "");
                                 assert!(first_query.parameters[10] == EVALUATED_AT.clone().timestamp_millis().to_string());
-                                // todo: skipping output as not sure how to test something that effectively is of type any
+                                assert!(first_query.parameters[11] == serde_json::to_string(&json!({ "Messages": [{ "foo": "bar" }] })).unwrap());
         
                                 let second_query = &statements[1];
                                 assert!(second_query.parameters[0].as_str() == "message-123");
@@ -494,7 +479,7 @@ mod tests {
                         cron: None,
                         process_id: "process-123".to_string(),
                         message_id: Some("message-123".to_string()),
-                        output: None,
+                        output: json!({ "Messages": [{ "foo": "bar" }] }),
                         evaluated_at: *EVALUATED_AT.clone()
                     };
 
@@ -520,7 +505,7 @@ mod tests {
                                 assert!(first_query.parameters[8].as_str() == "1234");
                                 assert!(first_query.parameters[9].as_str() == "");
                                 assert!(first_query.parameters[10] == EVALUATED_AT.clone().timestamp_millis().to_string());
-                                // todo: skipping output as not sure how to test something that effectively is of type any
+                                assert!(first_query.parameters[11] == serde_json::to_string(&json!({ "Messages": [{ "foo": "bar" }] })).unwrap());
         
                                 let second_query = &statements[1];
                                 assert!(second_query.parameters[0].as_str() == "message-123");
@@ -547,7 +532,7 @@ mod tests {
                         cron: None,
                         process_id: "process-123".to_string(),
                         message_id: Some("message-123".to_string()),
-                        output: None,
+                        output: json!({ "Messages": [{ "foo": "bar" }] }),
                         evaluated_at: *EVALUATED_AT.clone()
                     };
 
@@ -587,7 +572,7 @@ mod tests {
                         cron: None,
                         process_id: "process-123".to_string(),
                         message_id: Some("message-123".to_string()),
-                        output: None,
+                        output: json!({ "Messages": [{ "foo": "bar" }], "Memory": "foo" }),
                         evaluated_at: *EVALUATED_AT.clone()
                     };
 

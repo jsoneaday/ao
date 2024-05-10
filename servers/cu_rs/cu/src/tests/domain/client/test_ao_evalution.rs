@@ -8,6 +8,8 @@ use crate::{
     domain::{client::{ao_evaluation::AoEvaluation, sqlite::{Repository, SqliteClient}}, dal::SaveEvaluationSchema, model::model::EvaluationSchemaExtended}, 
     tests::fixtures::log::get_logger
 };
+#[allow(unused)]
+use serde_json::json;
 
 #[tokio::test]
 async fn test_save_evaluation() {
@@ -26,7 +28,7 @@ async fn test_save_evaluation() {
         cron: None,
         process_id: "process-123".to_string(),
         message_id: Some("message-123".to_string()),
-        output: None,
+        output: json!({ "Messages": [{ "foo": "bar" }], "Memory": "foo" }),
         evaluated_at: Utc::now()
     }).await {
         Ok(_) => (),
