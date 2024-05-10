@@ -52,7 +52,7 @@ pub trait EvaluatorSchema {
 #[async_trait]
 pub trait FindEvaluationSchema {
     /// to: is timestamp
-    async fn find_evaluation(&self, process_id: &str, to: i64, ordinate: i64, cron: Option<String>) -> Result<EvaluationSchema, CuErrors>;
+    async fn find_evaluation(&self, process_id: &str, to: i64, ordinate: i64, cron: Option<String>) -> Result<Option<EvaluationSchema>, CuErrors>;
 }
 
 #[async_trait]

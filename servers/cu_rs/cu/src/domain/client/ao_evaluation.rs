@@ -281,7 +281,7 @@ impl SaveEvaluationSchema for AoEvaluation {
 
 #[async_trait]
 impl FindEvaluationSchema for AoEvaluation {
-    async fn find_evaluation(&self, process_id: &str, timestamp: i64, ordinate: i64, cron: Option<String>) -> Result<EvaluationSchema, CuErrors> {
+    async fn find_evaluation(&self, process_id: &str, timestamp: i64, ordinate: i64, cron: Option<String>) -> Result<Option<EvaluationSchema>, CuErrors> {
         let query = AoEvaluation::create_select_query(process_id, timestamp, ordinate, cron);
         let mut raw_query = sqlx::query_as::<Sqlite, EvaluationQuerySchema>(&query.sql);
         for param in query.parameters.iter() {
@@ -291,11 +291,11 @@ impl FindEvaluationSchema for AoEvaluation {
         match raw_query.fetch_all(self.sql_client.get_conn()).await {
             Ok(res) => {
                 match res.first() {
-                    Some(row) => Ok(AoEvaluation::from_evaluation_doc(row)),
+                    Some(row) => Ok(Some(AoEvaluation::from_evaluation_doc(row))),
                     None => Err(CuErrors::HttpStatus(HttpError { status: 404, message: "Evaluation result not found".to_string() }))
                 }
             },
-            Err(e) => Err(CuErrors::SchemaValidation(SchemaValidationError { message: e.to_string() }))
+            Err(_) => Err(CuErrors::HttpStatus(HttpError { status: 404, message: "Evaluation result not found".to_string() }))
         }
     }
 }
@@ -324,12 +324,12 @@ mod tests {
                 struct MockReturnListOfAllCronEvaluations;
                 #[async_trait]
                 impl FindEvaluationSchema for MockReturnListOfAllCronEvaluations {
-                    async fn find_evaluation(&self, process_id: &str, timestamp: i64, ordinate: i64, cron: Option<String>) -> Result<EvaluationSchema, CuErrors> {
+                    async fn find_evaluation(&self, process_id: &str, timestamp: i64, ordinate: i64, cron: Option<String>) -> Result<Option<EvaluationSchema>, CuErrors> {
                         let query = AoEvaluation::create_select_query(process_id, timestamp, ordinate, cron);
 
                         assert!(query.parameters[0].as_str() == "process-123,1702677252111,1");
 
-                        Ok(EvaluationSchema {
+                        Ok(Some(EvaluationSchema {
                             process_id: "process-123".to_string(),
                             message_id: Some("message-123".to_string()),
                             deep_hash: Some("deepHash-123".to_string()),
@@ -341,7 +341,7 @@ mod tests {
                             cron: None,
                             evaluated_at: EVALUATED_AT.as_ref().clone(),
                             output: json!({ "Messages": [{ "foo": "bar" }] })
-                        })
+                        }))
                     }
                 }
 
@@ -350,19 +350,49 @@ mod tests {
                     let mock = MockReturnListOfAllCronEvaluations;
                     match mock.find_evaluation("process-123", 1702677252111, 1, None).await {
                         Ok(res) => {
-                            assert!(res.process_id == "process-123".to_string());
-                            assert!(res.message_id == Some("message-123".to_string()));
-                            assert!(res.deep_hash == Some("deepHash-123".to_string()));
-                            assert!(res.nonce == Some(1));
-                            assert!(res.epoch == Some(0));
-                            assert!(res.timestamp == 1702677252111);
-                            assert!(res.ordinate == 1);
-                            assert!(res.block_height == 1234);
-                            assert!(res.cron == None);
-                            assert!(res.evaluated_at == EVALUATED_AT.as_ref().clone());
-                            assert!(res.output == json!({ "Messages": [{ "foo": "bar" }] }));
+                            match res {
+                                Some(res) => {
+                                    assert!(res.process_id == "process-123".to_string());
+                                    assert!(res.message_id == Some("message-123".to_string()));
+                                    assert!(res.deep_hash == Some("deepHash-123".to_string()));
+                                    assert!(res.nonce == Some(1));
+                                    assert!(res.epoch == Some(0));
+                                    assert!(res.timestamp == 1702677252111);
+                                    assert!(res.ordinate == 1);
+                                    assert!(res.block_height == 1234);
+                                    assert!(res.cron == None);
+                                    assert!(res.evaluated_at == EVALUATED_AT.as_ref().clone());
+                                    assert!(res.output == json!({ "Messages": [{ "foo": "bar" }] }));
+                                },
+                                None => panic!("evaluation not returned")
+                            }
                         },
                         Err(e) => panic!("{}", e)
+                    }
+                }
+
+                struct MockReturn404StatusIfNotFound;
+                #[async_trait]
+                impl FindEvaluationSchema for MockReturn404StatusIfNotFound {
+                    async fn find_evaluation(&self, process_id: &str, timestamp: i64, ordinate: i64, cron: Option<String>) -> Result<Option<EvaluationSchema>, CuErrors> {
+                        _ = AoEvaluation::create_select_query(process_id, timestamp, ordinate, cron);
+
+                        Ok(None)
+                    }
+                }
+
+                #[tokio::test]
+                async fn test_return_404_status_if_not_found() {
+                    let mock = MockReturn404StatusIfNotFound;
+                    match mock.find_evaluation("process-123", 1702677252111, 1, None).await {
+                        Ok(res) => match res {
+                            Some(_) => panic!("find_evaluation should not succeed"),
+                            None => ()
+                        },
+                        Err(e) => match e {
+                            CuErrors::HttpStatus(HttpError { status, message: _ }) => assert!(status == 404),
+                            _ => panic!("find_evaluation invalid error")
+                        }
                     }
                 }
             }
