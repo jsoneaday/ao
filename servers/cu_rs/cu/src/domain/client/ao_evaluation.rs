@@ -2,8 +2,8 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqliteRow;
-use sqlx::{Sqlite, FromRow, Row};
-use crate::domain::dal::SaveEvaluationSchema;
+use sqlx::{FromRow, Row, Sqlite};
+use crate::domain::dal::{FindEvaluationSchema, SaveEvaluationSchema};
 use crate::domain::model::model::{EvaluationSchema, EvaluationSchemaExtended, Output};
 use crate::domain::strings::{get_empty_string, get_number_string};
 use crate::domain::utils::error::{CuErrors, HttpError, SchemaValidationError};
@@ -48,23 +48,23 @@ pub struct MessageDocParamsSchema {
     epoch_nonce: String,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
-struct EvaluationQuerySchema {
-    id: String,
-    process_id: String,
-    message_id: Option<String>,
-    deep_hash: Option<String>,
-    timestamp: i64,
-    epoch: Option<i64>,
-    nonce: Option<i64>,
-    ordinate: i64,
-    block_height: i64,
-    cron: Option<String>,
+pub struct EvaluationQuerySchema {
+    pub id: String,
+    pub process_id: String,
+    pub message_id: Option<String>,
+    pub deep_hash: Option<String>,
+    pub timestamp: i64,
+    pub epoch: Option<i64>,
+    pub nonce: Option<i64>,
+    pub ordinate: i64,
+    pub block_height: i64,
+    pub cron: Option<String>,
     /// in milliseconds
-    evaluated_at: i64,
+    pub evaluated_at: i64,
     /// A json string
-    output: String
+    pub output: String
 }
 
 impl<'r> FromRow<'r, SqliteRow> for EvaluationQuerySchema {
@@ -163,24 +163,6 @@ impl AoEvaluation {
             cron: evaluation_query_schema.cron.clone(),
             evaluated_at: DateTime::from_timestamp_millis(evaluation_query_schema.evaluated_at).unwrap(),
             output: serde_json::from_str(&evaluation_query_schema.output).unwrap()
-        }
-    }
-
-    pub async fn find_evaluation(&self, process_id: &str, timestamp: i64, ordinate: i64, cron: Option<String>) -> Result<EvaluationSchema, CuErrors> {
-        let query = AoEvaluation::create_select_query(process_id, timestamp, ordinate, cron);
-        let mut raw_query = sqlx::query_as::<Sqlite, EvaluationQuerySchema>(&query.sql);
-        for param in query.parameters.iter() {
-            let _raw_query = raw_query.bind(param);
-            raw_query = _raw_query;
-        }
-        match raw_query.fetch_all(self.sql_client.get_conn()).await {
-            Ok(res) => {
-                match res.first() {
-                    Some(row) => Ok(AoEvaluation::from_evaluation_doc(row)),
-                    None => Err(CuErrors::HttpStatus(HttpError { status: 404, message: "Evaluation result not found".to_string() }))
-                }
-            },
-            Err(e) => Err(CuErrors::SchemaValidation(SchemaValidationError { message: e.to_string() }))
         }
     }
 
@@ -296,12 +278,110 @@ impl SaveEvaluationSchema for AoEvaluation {
     }
 }
 
+#[async_trait]
+impl FindEvaluationSchema for AoEvaluation {
+    async fn find_evaluation(&self, process_id: &str, timestamp: i64, ordinate: i64, cron: Option<String>) -> Result<EvaluationSchema, CuErrors> {
+        let query = AoEvaluation::create_select_query(process_id, timestamp, ordinate, cron);
+        let mut raw_query = sqlx::query_as::<Sqlite, EvaluationQuerySchema>(&query.sql);
+        for param in query.parameters.iter() {
+            let _raw_query = raw_query.bind(param);
+            raw_query = _raw_query;
+        }
+        match raw_query.fetch_all(self.sql_client.get_conn()).await {
+            Ok(res) => {
+                match res.first() {
+                    Some(row) => Ok(AoEvaluation::from_evaluation_doc(row)),
+                    None => Err(CuErrors::HttpStatus(HttpError { status: 404, message: "Evaluation result not found".to_string() }))
+                }
+            },
+            Err(e) => Err(CuErrors::SchemaValidation(SchemaValidationError { message: e.to_string() }))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     mod ao_evaluation {
         use super::*;
+
+        mod find_evaluation {
+            use super::*;
+            use lazy_static::lazy_static;
+
+            mod find_the_evaluation {
+                use super::*;
+
+                lazy_static! {
+                    static ref MOCK_EVAL: Arc<EvaluationSchema> = {
+                        Arc::new(EvaluationSchema {
+                            // id: "process-123,1702677252111",
+                            timestamp: 1702677252111,
+                            ordinate: 1,
+                            block_height: 1234,
+                            process_id: "process-123".to_string(),
+                            message_id: Some("message-123".to_string()),
+                            output: None,
+                            evaluated_at: Utc::now(),
+                            deep_hash: None,
+                            epoch: None,
+                            nonce: None,
+                            cron: None
+                        })
+                    };
+                    static ref EVALUATED_AT: Arc<DateTime<Utc>> = {
+                        Arc::new(Utc::now())
+                    };
+                }
+
+                struct MockReturnListOfAllCronEvaluations;
+                #[async_trait]
+                impl FindEvaluationSchema for MockReturnListOfAllCronEvaluations {
+                    async fn find_evaluation(&self, process_id: &str, timestamp: i64, ordinate: i64, cron: Option<String>) -> Result<EvaluationSchema, CuErrors> {
+                        let query = AoEvaluation::create_select_query(process_id, timestamp, ordinate, cron);
+
+                        assert!(query.parameters[0].as_str() == "process-123,1702677252111,1");
+
+                        Ok(EvaluationSchema {
+                            // id: "process-123,1702677252111,1".to_string(),
+                            process_id: "process-123".to_string(),
+                            message_id: Some("message-123".to_string()),
+                            deep_hash: Some("deepHash-123".to_string()),
+                            nonce: Some(1),
+                            epoch: Some(0),
+                            timestamp: 1702677252111,
+                            ordinate: 1,
+                            block_height: 1234,
+                            cron: None,
+                            evaluated_at: EVALUATED_AT.as_ref().clone(),
+                            output: None // serde_json::to_string(&MockOutput { Messages: vec![Foo { foo: "bar".to_string() }] }).unwrap()
+                        })
+                    }
+                }
+
+                #[tokio::test]
+                async fn test_find_the_evaluation() {
+                    let mock = MockReturnListOfAllCronEvaluations;
+                    match mock.find_evaluation("process-123", 1702677252111, 1, None).await {
+                        Ok(res) => {
+                            assert!(res.process_id == "process-123".to_string());
+                            assert!(res.message_id == Some("message-123".to_string()));
+                            assert!(res.deep_hash == Some("deepHash-123".to_string()));
+                            assert!(res.nonce == Some(1));
+                            assert!(res.epoch == Some(0));
+                            assert!(res.timestamp == 1702677252111);
+                            assert!(res.ordinate == 1);
+                            assert!(res.block_height == 1234);
+                            assert!(res.cron == None);
+                            assert!(res.evaluated_at == EVALUATED_AT.as_ref().clone());
+                            // assert!(res.output == "1234".to_string());
+                        },
+                        Err(e) => panic!("{}", e)
+                    }
+                }
+            }
+        }
 
         mod save_evaluation {
             use super::*;
@@ -516,15 +596,5 @@ mod tests {
                 }
             }
         }
-
-        // mod find_evaluations {
-        //     use super::*;
-
-        //     mod return_the_list_of_all_cron_evaluations {
-        //         use super::*;
-
-
-        //     }
-        // }
     }
 }

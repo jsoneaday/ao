@@ -150,7 +150,7 @@ pub struct EvaluationSchema {
     * not to be confused with when the transaction was placed on chain
     */
     pub evaluated_at: DateTime<Utc>,
-    pub output: Output
+    pub output: Option<Output>
 }
 
 #[derive(Serialize)]

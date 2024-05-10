@@ -1,4 +1,7 @@
-use crate::domain::model::model::{BlockSchema, EvaluationSchema, EvaluationSchemaExtended, FromOrToEvaluationSchema, MessageMetaSchema, ModuleSchema, ProcessSchema, ProcessSchemaWithoutId, ProcessUrl, RawTagSchema, Sort, StreamSchema, TimestampSchema};
+use crate::domain::model::model::{
+    BlockSchema, EvaluationSchema, EvaluationSchemaExtended, FromOrToEvaluationSchema, MessageMetaSchema, ModuleSchema, ProcessSchema, 
+    ProcessSchemaWithoutId, ProcessUrl, RawTagSchema, Sort, StreamSchema, TimestampSchema
+};
 use async_trait::async_trait;
 use reqwest::Url;
 
@@ -48,7 +51,8 @@ pub trait EvaluatorSchema {
 
 #[async_trait]
 pub trait FindEvaluationSchema {
-    async fn find_evaluation(process_id: String, to: Option<u64>, ordinate: Option<String>, cron: Option<String>) -> EvaluationSchema;
+    /// to: is timestamp
+    async fn find_evaluation(&self, process_id: &str, to: i64, ordinate: i64, cron: Option<String>) -> Result<EvaluationSchema, CuErrors>;
 }
 
 #[async_trait]
