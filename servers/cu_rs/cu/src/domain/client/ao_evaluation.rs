@@ -29,7 +29,7 @@ pub struct EvaluationDocSchema {
     timestamp: i64,
     epoch: Option<i64>,
     nonce: Option<i64>,
-    ordinate: i64,
+    ordinate: String,
     block_height: i64,
     cron: Option<String>,
     evaluated_at: DateTime<Utc>,
@@ -59,7 +59,7 @@ pub struct EvaluationQuerySchema {
     pub timestamp: i64,
     pub epoch: Option<i64>,
     pub nonce: Option<i64>,
-    pub ordinate: i64,
+    pub ordinate: String,
     pub block_height: i64,
     pub cron: Option<String>,
     /// in milliseconds
@@ -74,7 +74,7 @@ impl<'r> FromRow<'r, SqliteRow> for EvaluationQuerySchema {
             EvaluationQuerySchema { 
                 id: row.try_get("id")?, 
                 process_id: row.try_get("processId")?,
-                message_id: row.try_get("message_id")?,
+                message_id: row.try_get("messageId")?,
                 deep_hash: row.try_get("deepHash")?,
                 timestamp: row.try_get("timestamp")?,
                 epoch: row.try_get("epoch")?,
@@ -100,7 +100,7 @@ impl AoEvaluation {
         }
     }
 
-    fn create_evaluation_id(process_id: &str, timestamp: i64, ordinate: i64, cron: Option<String>) -> String {
+    fn create_evaluation_id(process_id: &str, timestamp: i64, ordinate: &str, cron: Option<String>) -> String {
         if cron.is_none() {
             format!("{},{},{}", process_id, timestamp, ordinate)
         } else {
@@ -137,7 +137,7 @@ impl AoEvaluation {
         Ok(message_id.unwrap())
     }
 
-    fn create_select_query (process_id: &str, timestamp: i64, ordinate: i64, cron: Option<String>) -> Query {
+    fn create_select_query (process_id: &str, timestamp: i64, ordinate: &str, cron: Option<String>) -> Query {
         Query {
           sql: format!(r"
             SELECT
@@ -167,20 +167,16 @@ impl AoEvaluation {
         }
     }
 
-    fn get_evaluation_id(evaluation: &EvaluationSchemaExtended) -> String {
-        AoEvaluation::create_evaluation_id(&evaluation.process_id, evaluation.timestamp, evaluation.ordinate, evaluation.cron.clone())
-    }
-
     fn to_evaluation_doc(evaluation: &EvaluationSchemaExtended) -> EvaluationDocSchema {
         EvaluationDocSchema { 
-            id: AoEvaluation::get_evaluation_id(&evaluation), 
+            id: AoEvaluation::create_evaluation_id(&evaluation.process_id, evaluation.timestamp, &evaluation.ordinate, evaluation.cron.clone()), 
             process_id: evaluation.process_id.clone(), 
             message_id: evaluation.message_id.clone(), 
             deep_hash: evaluation.deep_hash.clone(), 
             timestamp: evaluation.timestamp, 
             epoch: evaluation.epoch, 
             nonce: evaluation.nonce, 
-            ordinate: evaluation.ordinate, 
+            ordinate: evaluation.ordinate.clone(), 
             block_height: evaluation.block_height, 
             cron: evaluation.cron.clone(), 
             evaluated_at: evaluation.evaluated_at, 
@@ -250,7 +246,7 @@ impl AoEvaluation {
 #[async_trait]
 impl SaveEvaluationSchema for AoEvaluation {
     async fn save_evaluation(&self, evaluation: EvaluationSchemaExtended) -> Result<(), CuErrors> {
-        match AoEvaluation::create_insert_queries(evaluation) {
+        match AoEvaluation::create_insert_queries(evaluation.clone()) {
             Ok(statements) => {
                 let mut tx = self.sql_client.get_conn().begin().await.unwrap();
                 
@@ -281,21 +277,20 @@ impl SaveEvaluationSchema for AoEvaluation {
 
 #[async_trait]
 impl FindEvaluationSchema for AoEvaluation {
-    async fn find_evaluation(&self, process_id: &str, timestamp: i64, ordinate: i64, cron: Option<String>) -> Result<Option<EvaluationSchema>, CuErrors> {
+    async fn find_evaluation(&self, process_id: &str, timestamp: i64, ordinate: &str, cron: Option<String>) -> Result<Option<EvaluationSchema>, CuErrors> {
         let query = AoEvaluation::create_select_query(process_id, timestamp, ordinate, cron);
         let mut raw_query = sqlx::query_as::<Sqlite, EvaluationQuerySchema>(&query.sql);
         for param in query.parameters.iter() {
-            let _raw_query = raw_query.bind(param);
-            raw_query = _raw_query;
+            raw_query = raw_query.bind(param);
         }
         match raw_query.fetch_all(self.sql_client.get_conn()).await {
             Ok(res) => {
                 match res.first() {
                     Some(row) => Ok(Some(AoEvaluation::from_evaluation_doc(row))),
-                    None => Err(CuErrors::HttpStatus(HttpError { status: 404, message: "Evaluation result not found".to_string() }))
+                    None => Err(CuErrors::HttpStatus(HttpError { status: 404, message: "2Evaluation result not found".to_string() }))
                 }
             },
-            Err(_) => Err(CuErrors::HttpStatus(HttpError { status: 404, message: "Evaluation result not found".to_string() }))
+            Err(_) => Err(CuErrors::HttpStatus(HttpError { status: 404, message: "1Evaluation result not found".to_string() }))
         }
     }
 }
@@ -324,7 +319,7 @@ mod tests {
                 struct MockReturnListOfAllCronEvaluations;
                 #[async_trait]
                 impl FindEvaluationSchema for MockReturnListOfAllCronEvaluations {
-                    async fn find_evaluation(&self, process_id: &str, timestamp: i64, ordinate: i64, cron: Option<String>) -> Result<Option<EvaluationSchema>, CuErrors> {
+                    async fn find_evaluation(&self, process_id: &str, timestamp: i64, ordinate: &str, cron: Option<String>) -> Result<Option<EvaluationSchema>, CuErrors> {
                         let query = AoEvaluation::create_select_query(process_id, timestamp, ordinate, cron);
 
                         assert!(query.parameters[0].as_str() == "process-123,1702677252111,1");
@@ -336,7 +331,7 @@ mod tests {
                             nonce: Some(1),
                             epoch: Some(0),
                             timestamp: 1702677252111,
-                            ordinate: 1,
+                            ordinate: "1".to_string(),
                             block_height: 1234,
                             cron: None,
                             evaluated_at: EVALUATED_AT.as_ref().clone(),
@@ -348,7 +343,7 @@ mod tests {
                 #[tokio::test]
                 async fn test_find_the_evaluation() {
                     let mock = MockReturnListOfAllCronEvaluations;
-                    match mock.find_evaluation("process-123", 1702677252111, 1, None).await {
+                    match mock.find_evaluation("process-123", 1702677252111, "1", None).await {
                         Ok(res) => {
                             match res {
                                 Some(res) => {
@@ -358,7 +353,7 @@ mod tests {
                                     assert!(res.nonce == Some(1));
                                     assert!(res.epoch == Some(0));
                                     assert!(res.timestamp == 1702677252111);
-                                    assert!(res.ordinate == 1);
+                                    assert!(res.ordinate == "1".to_string());
                                     assert!(res.block_height == 1234);
                                     assert!(res.cron == None);
                                     assert!(res.evaluated_at == EVALUATED_AT.as_ref().clone());
@@ -374,7 +369,7 @@ mod tests {
                 struct MockReturn404StatusIfNotFound;
                 #[async_trait]
                 impl FindEvaluationSchema for MockReturn404StatusIfNotFound {
-                    async fn find_evaluation(&self, process_id: &str, timestamp: i64, ordinate: i64, cron: Option<String>) -> Result<Option<EvaluationSchema>, CuErrors> {
+                    async fn find_evaluation(&self, process_id: &str, timestamp: i64, ordinate: &str, cron: Option<String>) -> Result<Option<EvaluationSchema>, CuErrors> {
                         _ = AoEvaluation::create_select_query(process_id, timestamp, ordinate, cron);
 
                         Ok(None)
@@ -384,7 +379,7 @@ mod tests {
                 #[tokio::test]
                 async fn test_return_404_status_if_not_found() {
                     let mock = MockReturn404StatusIfNotFound;
-                    match mock.find_evaluation("process-123", 1702677252111, 1, None).await {
+                    match mock.find_evaluation("process-123", 1702677252111, "1", None).await {
                         Ok(res) => match res {
                             Some(_) => panic!("find_evaluation should not succeed"),
                             None => ()
@@ -451,7 +446,7 @@ mod tests {
                         timestamp: 1702677252111,
                         nonce: Some(1),
                         epoch: Some(0),
-                        ordinate: 1,
+                        ordinate: "1".to_string(),
                         block_height: 1234,
                         cron: None,
                         process_id: "process-123".to_string(),
@@ -504,7 +499,7 @@ mod tests {
                         timestamp: 1702677252111,
                         nonce: Some(1),
                         epoch: Some(0),
-                        ordinate: 1,
+                        ordinate: "1".to_string(),
                         block_height: 1234,
                         cron: None,
                         process_id: "process-123".to_string(),
@@ -557,7 +552,7 @@ mod tests {
                         timestamp: 1702677252111,
                         nonce: Some(1),
                         epoch: Some(0),
-                        ordinate: 1,
+                        ordinate: "1".to_string(),
                         block_height: 1234,
                         cron: None,
                         process_id: "process-123".to_string(),
@@ -597,7 +592,7 @@ mod tests {
                         timestamp: 1702677252111,
                         nonce: Some(1),
                         epoch: Some(0),
-                        ordinate: 1,
+                        ordinate: "1".to_string(),
                         block_height: 1234,
                         cron: None,
                         process_id: "process-123".to_string(),

@@ -106,7 +106,7 @@ pub struct Output {
     error: Option<Vec<u8>>
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct EvaluationSchema {
     /**
@@ -137,7 +137,7 @@ pub struct EvaluationSchema {
     * For a Scheduled Message, this will always simply be it's nonce.
     * For a Cron Message, this will be the nonce of the most recent Scheduled Message.
     */
-    pub ordinate: i64,
+    pub ordinate: String,
     pub block_height: i64,
     /**
     * Scheduled messages do not have a cron,
@@ -154,7 +154,7 @@ pub struct EvaluationSchema {
     pub output: Value
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct EvaluationSchemaExtended {
     pub process_id: String,
@@ -163,7 +163,7 @@ pub struct EvaluationSchemaExtended {
     pub timestamp: i64,
     pub epoch: Option<i64>,
     pub nonce: Option<i64>,
-    pub ordinate: i64,
+    pub ordinate: String,
     pub block_height: i64,
     pub cron: Option<String>,
     pub evaluated_at: DateTime<Utc>,
