@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 use sqlx::prelude::FromRow;
@@ -14,11 +15,11 @@ pub enum Sort {
     Desc
 }
 
-impl ToString for Sort {
-    fn to_string(&self) -> String {
+impl Display for Sort {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Sort::Asc => "ASC".to_string(),
-            Sort::Desc => "DESC".to_string()
+            Sort::Asc => write!(f, "{}", "ASC"),
+            Sort::Desc => write!(f, "{}", "DESC")
         }
     }
 }
@@ -173,9 +174,9 @@ pub struct EvaluationSchemaExtended {
 
 #[allow(unused)]
 pub struct FromOrToEvaluationSchema {
-    timestamp: Option<i64>,
-    ordinate: Option<String>,
-    cron: Option<String>
+    pub timestamp: Option<i64>,
+    pub ordinate: Option<String>,
+    pub cron: Option<String>
 }
 
 pub trait StreamSchema {

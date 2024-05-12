@@ -63,15 +63,16 @@ pub trait SaveEvaluationSchema {
 #[async_trait]
 pub trait FindEvaluationsSchema {
     /// sort defauls to Asc
-    /// only_cron default to false
+    /// only_cron defaults to false
     async fn find_evaluations_schema(
+        &self,
         process_id: String, 
         from: FromOrToEvaluationSchema, 
         to: FromOrToEvaluationSchema, 
         sort: Option<Sort>, 
-        limit: u64, 
+        limit: i64, 
         only_cron: Option<bool>
-    ) -> Vec<EvaluationSchema>;
+    ) -> Result<Vec<EvaluationSchema>, CuErrors>;
 }
 
 #[async_trait]

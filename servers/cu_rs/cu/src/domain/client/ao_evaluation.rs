@@ -1,14 +1,15 @@
 use std::sync::Arc;
+use bevy_reflect::Tuple;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::sqlite::SqliteRow;
 use sqlx::{FromRow, Row, Sqlite};
-use crate::domain::dal::{FindEvaluationSchema, SaveEvaluationSchema};
-use crate::domain::model::model::{EvaluationSchema, EvaluationSchemaExtended};
+use crate::domain::dal::{FindEvaluationSchema, FindEvaluationsSchema, SaveEvaluationSchema};
+use crate::domain::model::model::{EvaluationSchema, EvaluationSchemaExtended, FromOrToEvaluationSchema, Sort};
 use crate::domain::strings::{get_empty_string, get_number_string};
 use crate::domain::utils::error::{CuErrors, HttpError, SchemaValidationError};
-use super::sqlite::{SqliteClient, ConnGetter, EVALUATIONS_TABLE, MESSAGES_TABLE};
+use super::sqlite::{SqliteClient, ConnGetter, EVALUATIONS_TABLE, MESSAGES_TABLE, COLLATION_SEQUENCE_MAX_CHAR};
 use validator::Validate;
 use async_trait::async_trait;
 
@@ -100,12 +101,25 @@ impl AoEvaluation {
         }
     }
 
-    fn create_evaluation_id(process_id: &str, timestamp: i64, ordinate: &str, cron: Option<String>) -> String {
-        if cron.is_none() {
-            format!("{},{},{}", process_id, timestamp, ordinate)
-        } else {
-            format!("{},{},{},{}", process_id, timestamp, ordinate, cron.unwrap())
-        }        
+    fn create_evaluation_id(process_id: String, timestamp: Option<i64>, ordinate: Option<String>, cron: Option<String>) -> String {
+        let params = (process_id, timestamp, ordinate, cron);
+        let mut final_string = "".to_string();
+        for i in 0..params.field_len() {
+            match i {
+                0 => final_string.push_str(&format!("{},", params.0.clone())),
+                1 => if let Some(timestamp) = params.1 {
+                    final_string.push_str(&format!("{},", timestamp))
+                },
+                2 => if let Some(ref ordinate) = params.2 {
+                    final_string.push_str(&format!("{},", ordinate.clone()))
+                },
+                3 => if let Some(ref cron) = params.3 {
+                    final_string.push_str(&format!("{}", cron.clone()))
+                },
+                _ => ()
+            }
+        }
+        final_string
     }
 
     /**
@@ -137,7 +151,7 @@ impl AoEvaluation {
         Ok(message_id.unwrap())
     }
 
-    fn create_select_query (process_id: &str, timestamp: i64, ordinate: &str, cron: Option<String>) -> Query {
+    fn create_find_evaluation_query(process_id: &str, timestamp: i64, ordinate: &str, cron: Option<String>) -> Query {
         Query {
           sql: format!(r"
             SELECT
@@ -147,7 +161,7 @@ impl AoEvaluation {
             WHERE
               id = ?;
           ", EVALUATIONS_TABLE),
-          parameters: vec![AoEvaluation::create_evaluation_id(process_id, timestamp, ordinate, cron)]
+          parameters: vec![AoEvaluation::create_evaluation_id(process_id.to_string(), Some(timestamp), Some(ordinate.to_string()), cron)]
         }
     }
 
@@ -169,7 +183,7 @@ impl AoEvaluation {
 
     fn to_evaluation_doc(evaluation: &EvaluationSchemaExtended) -> EvaluationDocSchema {
         EvaluationDocSchema { 
-            id: AoEvaluation::create_evaluation_id(&evaluation.process_id, evaluation.timestamp, &evaluation.ordinate, evaluation.cron.clone()), 
+            id: AoEvaluation::create_evaluation_id(evaluation.process_id.clone(), Some(evaluation.timestamp), Some(evaluation.ordinate), evaluation.cron.clone()), 
             process_id: evaluation.process_id.clone(), 
             message_id: evaluation.message_id.clone(), 
             deep_hash: evaluation.deep_hash.clone(), 
@@ -184,7 +198,7 @@ impl AoEvaluation {
         }
     }
 
-    fn create_insert_queries(evaluation: EvaluationSchemaExtended) -> Result<Vec<Query>, CuErrors> {
+    fn create_save_evaluation_queries(evaluation: EvaluationSchemaExtended) -> Result<Vec<Query>, CuErrors> {
         let eval_doc = AoEvaluation::to_evaluation_doc(&evaluation);
         let mut statements = vec![
             Query {
@@ -240,13 +254,60 @@ impl AoEvaluation {
         }
 
         Ok(statements)
-    }    
+    }
+
+    fn create_find_evaluations_query(process_id: &str, from: Option<FromOrToEvaluationSchema>, to: Option<FromOrToEvaluationSchema>, only_cron: bool, sort: Sort, limit: i64) -> Query {
+        Query {
+          sql: format!(r"
+            SELECT
+              id, processId, messageId, deepHash, nonce, epoch, timestamp,
+              ordinate, blockHeight, cron, evaluatedAt, output
+            FROM {}
+            WHERE
+              id > ? AND id <= ?
+              {}
+            ORDER BY
+              timestamp {},
+              ordinate {},
+              cron {}
+            LIMIT ?;
+          ", EVALUATIONS_TABLE, if only_cron { "AND cron IS NOT NULL" } else { "" }, sort, sort, sort),
+          parameters: vec![
+            // /**
+            //  * trim range using criteria, if provided.
+            //  *
+            //  * from is exclusive, while to is inclusive
+            //  */
+            if from.is_none() {
+                AoEvaluation::create_evaluation_id(process_id.to_string(), None, None, None)
+            } else {
+                AoEvaluation::create_evaluation_id(
+                    process_id.to_string(), 
+                    if let Some(from) = from { from.timestamp } else { None }, 
+                    if let Some(from) = from { from.ordinate } else { None },  
+                    if let Some(from) = from { from.cron } else { None }
+                )
+            },
+            if to.is_none() {
+                AoEvaluation::create_evaluation_id(process_id.to_string(), Some(COLLATION_SEQUENCE_MAX_CHAR), None, None)
+            } else {
+                AoEvaluation::create_evaluation_id(
+                    process_id, 
+                    if let Some(to) = to { to.timestamp } else { None }, 
+                    if let Some(to) { to.ordinate || COLLATION_SEQUENCE_MAX_CHAR } else { None },
+                    if let Some(cron) = cron { cron: to.cron } else { None }
+                )
+            },
+            limit
+          ]
+        }
+    }
 }
 
 #[async_trait]
 impl SaveEvaluationSchema for AoEvaluation {
     async fn save_evaluation(&self, evaluation: EvaluationSchemaExtended) -> Result<(), CuErrors> {
-        match AoEvaluation::create_insert_queries(evaluation.clone()) {
+        match AoEvaluation::create_save_evaluation_queries(evaluation.clone()) {
             Ok(statements) => {
                 let mut tx = self.sql_client.get_conn().begin().await.unwrap();
                 
@@ -278,7 +339,7 @@ impl SaveEvaluationSchema for AoEvaluation {
 #[async_trait]
 impl FindEvaluationSchema for AoEvaluation {
     async fn find_evaluation(&self, process_id: &str, timestamp: i64, ordinate: &str, cron: Option<String>) -> Result<Option<EvaluationSchema>, CuErrors> {
-        let query = AoEvaluation::create_select_query(process_id, timestamp, ordinate, cron);
+        let query = AoEvaluation::create_find_evaluation_query(process_id, timestamp, ordinate, cron);
         let mut raw_query = sqlx::query_as::<Sqlite, EvaluationQuerySchema>(&query.sql);
         for param in query.parameters.iter() {
             raw_query = raw_query.bind(param);
@@ -287,10 +348,45 @@ impl FindEvaluationSchema for AoEvaluation {
             Ok(res) => {
                 match res.first() {
                     Some(row) => Ok(Some(AoEvaluation::from_evaluation_doc(row))),
-                    None => Err(CuErrors::HttpStatus(HttpError { status: 404, message: "2Evaluation result not found".to_string() }))
+                    None => Err(CuErrors::HttpStatus(HttpError { status: 404, message: "Evaluation result not found".to_string() }))
                 }
             },
-            Err(_) => Err(CuErrors::HttpStatus(HttpError { status: 404, message: "1Evaluation result not found".to_string() }))
+            Err(e) => Err(CuErrors::DatabaseError(e))
+        }
+    }
+}
+
+#[async_trait]
+impl FindEvaluationsSchema for AoEvaluation {
+    async fn find_evaluations_schema(
+        &self,
+        process_id: String, 
+        from: FromOrToEvaluationSchema, 
+        to: FromOrToEvaluationSchema, 
+        sort: Option<Sort>, 
+        limit: i64, 
+        only_cron: Option<bool>
+    ) -> Result<Vec<EvaluationSchema>, CuErrors> {
+        let query = AoEvaluation::create_find_evaluations_query(
+            process_id.as_str(), 
+            Some(from), Some(to), 
+            if let Some(only_cron) = only_cron { only_cron } else { false }, 
+            if let Some(sort) = sort { sort } else { Sort::Asc }, 
+            limit
+        );
+        let mut raw_query = sqlx::query_as::<_, EvaluationQuerySchema>(&query.sql);
+        for param in query.parameters.iter() {
+            raw_query = raw_query.bind(param);
+        }
+        match raw_query.fetch_all(self.sql_client.get_conn()).await {
+            Ok(res) => {
+                let mut result: Vec<EvaluationSchema> = vec![];
+                for eval in res.iter() {
+                    result.push(AoEvaluation::from_evaluation_doc(eval));
+                }
+                Ok(result)
+            },
+            Err(e) => Err(CuErrors::DatabaseError(e))
         }
     }
 }
@@ -320,7 +416,7 @@ mod tests {
                 #[async_trait]
                 impl FindEvaluationSchema for MockReturnListOfAllCronEvaluations {
                     async fn find_evaluation(&self, process_id: &str, timestamp: i64, ordinate: &str, cron: Option<String>) -> Result<Option<EvaluationSchema>, CuErrors> {
-                        let query = AoEvaluation::create_select_query(process_id, timestamp, ordinate, cron);
+                        let query = AoEvaluation::create_find_evaluation_queries(process_id, timestamp, ordinate, cron);
 
                         assert!(query.parameters[0].as_str() == "process-123,1702677252111,1");
 
@@ -370,7 +466,7 @@ mod tests {
                 #[async_trait]
                 impl FindEvaluationSchema for MockReturn404StatusIfNotFound {
                     async fn find_evaluation(&self, process_id: &str, timestamp: i64, ordinate: &str, cron: Option<String>) -> Result<Option<EvaluationSchema>, CuErrors> {
-                        _ = AoEvaluation::create_select_query(process_id, timestamp, ordinate, cron);
+                        _ = AoEvaluation::create_find_evaluation_queries(process_id, timestamp, ordinate, cron);
 
                         Ok(None)
                     }
@@ -410,7 +506,7 @@ mod tests {
                 #[async_trait]
                 impl SaveEvaluationSchema for MockUseDeepHashAsId {
                     async fn save_evaluation(&self, evaluation: EvaluationSchemaExtended) -> Result<(), CuErrors> {
-                        match AoEvaluation::create_insert_queries(evaluation) {
+                        match AoEvaluation::create_save_evaluation_queries(evaluation) {
                             Ok(statements) => {
                                 let first_query = &statements[0];
                                 assert!(first_query.parameters[0].as_str() == "process-123,1702677252111,1");
@@ -463,7 +559,7 @@ mod tests {
                 #[async_trait]
                 impl SaveEvaluationSchema for MockUseMessageIdAsId {
                     async fn save_evaluation(&self, evaluation: EvaluationSchemaExtended) -> Result<(), CuErrors> {
-                        match AoEvaluation::create_insert_queries(evaluation) {
+                        match AoEvaluation::create_save_evaluation_queries(evaluation) {
                             Ok(statements) => {
                                 let first_query = &statements[0];
                                 assert!(first_query.parameters[0].as_str() == "process-123,1702677252111,1");
@@ -516,7 +612,7 @@ mod tests {
                 #[async_trait]
                 impl SaveEvaluationSchema for MockUseMessageIdIfNoDeepHash {
                     async fn save_evaluation(&self, evaluation: EvaluationSchemaExtended) -> Result<(), CuErrors> {
-                        match AoEvaluation::create_insert_queries(evaluation) {
+                        match AoEvaluation::create_save_evaluation_queries(evaluation) {
                             Ok(statements) => {
                                 let first_query = &statements[0];
                                 assert!(first_query.parameters[0].as_str() == "process-123,1702677252111,1");
@@ -569,7 +665,7 @@ mod tests {
                 #[async_trait]
                 impl SaveEvaluationSchema for MockNoopInsertEvaluationOrMessage {
                     async fn save_evaluation(&self, evaluation: EvaluationSchemaExtended) -> Result<(), CuErrors> {
-                        match AoEvaluation::create_insert_queries(evaluation) {
+                        match AoEvaluation::create_save_evaluation_queries(evaluation) {
                             Ok(statements) => {
                                 let first_query = &statements[0];
                                 assert!(first_query.sql.trim().starts_with(format!("INSERT OR IGNORE INTO {}", EVALUATIONS_TABLE).as_str()));
