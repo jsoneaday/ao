@@ -183,7 +183,7 @@ impl AoEvaluation {
 
     fn to_evaluation_doc(evaluation: &EvaluationSchemaExtended) -> EvaluationDocSchema {
         EvaluationDocSchema { 
-            id: AoEvaluation::create_evaluation_id(evaluation.process_id.clone(), Some(evaluation.timestamp), Some(evaluation.ordinate), evaluation.cron.clone()), 
+            id: AoEvaluation::create_evaluation_id(evaluation.process_id.clone(), Some(evaluation.timestamp), Some(evaluation.ordinate.clone()), evaluation.cron.clone()), 
             process_id: evaluation.process_id.clone(), 
             message_id: evaluation.message_id.clone(), 
             deep_hash: evaluation.deep_hash.clone(), 
@@ -292,13 +292,17 @@ impl AoEvaluation {
                 AoEvaluation::create_evaluation_id(process_id.to_string(), Some(COLLATION_SEQUENCE_MAX_CHAR), None, None)
             } else {
                 AoEvaluation::create_evaluation_id(
-                    process_id, 
+                    process_id.to_string(), 
                     if let Some(to) = to { to.timestamp } else { None }, 
-                    if let Some(to) { to.ordinate || COLLATION_SEQUENCE_MAX_CHAR } else { None },
-                    if let Some(cron) = cron { cron: to.cron } else { None }
+                    if let Some(to) = to { 
+                        if let Some(ordinate) = to.ordinate { Some(ordinate) } else { Some(COLLATION_SEQUENCE_MAX_CHAR.to_string()) } 
+                    } else { 
+                        None 
+                    },
+                    if let Some(to) = to { to.cron } else { None }
                 )
             },
-            limit
+            limit.to_string()
           ]
         }
     }
@@ -358,18 +362,19 @@ impl FindEvaluationSchema for AoEvaluation {
 
 #[async_trait]
 impl FindEvaluationsSchema for AoEvaluation {
-    async fn find_evaluations_schema(
+    async fn find_evaluations(
         &self,
         process_id: String, 
-        from: FromOrToEvaluationSchema, 
-        to: FromOrToEvaluationSchema, 
+        from: Option<FromOrToEvaluationSchema>, 
+        to: Option<FromOrToEvaluationSchema>, 
         sort: Option<Sort>, 
         limit: i64, 
         only_cron: Option<bool>
     ) -> Result<Vec<EvaluationSchema>, CuErrors> {
         let query = AoEvaluation::create_find_evaluations_query(
             process_id.as_str(), 
-            Some(from), Some(to), 
+            from, 
+            to, 
             if let Some(only_cron) = only_cron { only_cron } else { false }, 
             if let Some(sort) = sort { sort } else { Sort::Asc }, 
             limit
@@ -416,7 +421,7 @@ mod tests {
                 #[async_trait]
                 impl FindEvaluationSchema for MockReturnListOfAllCronEvaluations {
                     async fn find_evaluation(&self, process_id: &str, timestamp: i64, ordinate: &str, cron: Option<String>) -> Result<Option<EvaluationSchema>, CuErrors> {
-                        let query = AoEvaluation::create_find_evaluation_queries(process_id, timestamp, ordinate, cron);
+                        let query = AoEvaluation::create_find_evaluation_query(process_id, timestamp, ordinate, cron);
 
                         assert!(query.parameters[0].as_str() == "process-123,1702677252111,1");
 
@@ -466,7 +471,7 @@ mod tests {
                 #[async_trait]
                 impl FindEvaluationSchema for MockReturn404StatusIfNotFound {
                     async fn find_evaluation(&self, process_id: &str, timestamp: i64, ordinate: &str, cron: Option<String>) -> Result<Option<EvaluationSchema>, CuErrors> {
-                        _ = AoEvaluation::create_find_evaluation_queries(process_id, timestamp, ordinate, cron);
+                        _ = AoEvaluation::create_find_evaluation_query(process_id, timestamp, ordinate, cron);
 
                         Ok(None)
                     }
@@ -699,6 +704,142 @@ mod tests {
 
                     let mock = MockNoopInsertEvaluationOrMessage;
                     _ = mock.save_evaluation(args).await;
+                }
+            }
+        }
+
+        mod find_evaluations {
+            use super::*;
+
+            mod return_the_list_of_all_cron_evaluations {
+                use super::*;
+
+                struct MockReturnListOfAllCronEvaluations;
+                #[async_trait]
+                impl FindEvaluationsSchema for MockReturnListOfAllCronEvaluations {
+                    async fn find_evaluations(
+                        &self,
+                        process_id: String, 
+                        from: Option<FromOrToEvaluationSchema>, 
+                        to: Option<FromOrToEvaluationSchema>, 
+                        sort: Option<Sort>, 
+                        limit: i64, 
+                        only_cron: Option<bool>
+                    ) -> Result<Vec<EvaluationSchema>, CuErrors> {
+                        let mock_eval = EvaluationSchema {
+                            timestamp: 1702677252111,
+                            ordinate: "1".to_string(),
+                            deep_hash: None,
+                            block_height: 1234,
+                            process_id: "process-123".to_string(),
+                            message_id: Some("message-123".to_string()),
+                            epoch: None,
+                            nonce: None,
+                            cron: None,
+                            output: Value::Object(serde_json::Map::new()),
+                            evaluated_at: Utc::now()
+                        };
+
+                        let query = AoEvaluation::create_find_evaluations_query(
+                            process_id.as_str(), 
+                            from, 
+                            to, 
+                            if let Some(only_cron) = only_cron { only_cron } else { false }, 
+                            if let Some(sort) = sort { sort } else { Sort::Asc }, 
+                            limit
+                        );
+
+                        assert!(query.sql.contains("AND cron IS NOT NULL"));
+                        assert!(query.sql.contains("timestamp ASC"));
+                        assert!(query.sql.contains("ordinate ASC"));
+                        assert!(query.sql.contains("cron ASC"));
+
+                        assert!(query.parameters[0] == "process-123,");
+                        assert!(query.parameters[1] == format!("process-123,{}", COLLATION_SEQUENCE_MAX_CHAR));
+                        assert!(query.parameters[2] == "10");
+
+                        Ok(vec![
+                            mock_eval.clone(),
+                            mock_eval
+                        ])
+                    }
+                }
+
+                #[tokio::test]
+                async fn test_return_the_list_of_all_cron_evaluations() {
+                    let mock = MockReturnListOfAllCronEvaluations;
+                    match mock.find_evaluations("process-123".to_string(), None, None, Some(Sort::Asc), 10, Some(true)).await {
+                        Ok(res) => assert!(res.len() == 2),
+                        Err(e) => panic!("{}", e)
+                    }
+                }
+            }
+
+            mod return_the_evaluations_between_from_and_to {
+                use super::*;
+
+                struct MockReturnEvalutionsBetweenFromAndTo;
+                #[async_trait]
+                impl FindEvaluationsSchema for MockReturnEvalutionsBetweenFromAndTo {
+                    async fn find_evaluations(
+                        &self,
+                        process_id: String, 
+                        from: Option<FromOrToEvaluationSchema>, 
+                        to: Option<FromOrToEvaluationSchema>, 
+                        sort: Option<Sort>, 
+                        limit: i64, 
+                        only_cron: Option<bool>
+                    ) -> Result<Vec<EvaluationSchema>, CuErrors> {
+                        let mock_eval = EvaluationSchema {
+                            timestamp: 1702677252111,
+                            ordinate: "1".to_string(),
+                            deep_hash: None,
+                            block_height: 1234,
+                            process_id: "process-123".to_string(),
+                            message_id: Some("message-123".to_string()),
+                            epoch: None,
+                            nonce: None,
+                            cron: None,
+                            output: json!({ "state": { "foo": "bar" } }),
+                            evaluated_at: Utc::now()
+                        };
+
+                        let query = AoEvaluation::create_find_evaluations_query(
+                            process_id.as_str(), 
+                            from, 
+                            to, 
+                            if let Some(only_cron) = only_cron { only_cron } else { false }, 
+                            if let Some(sort) = sort { sort } else { Sort::Asc }, 
+                            limit
+                        );
+
+                        assert!(query.sql.contains("AND cron IS NOT NULL") != true);
+
+                        assert!(query.parameters[0] == "process-123,1702677252111,3");
+                        assert!(query.parameters[1] == format!("process-123,1702677252111,{}", COLLATION_SEQUENCE_MAX_CHAR));
+                        assert!(query.parameters[2] == "10");
+
+                        Ok(vec![
+                            mock_eval.clone(),
+                            mock_eval
+                        ])
+                    }
+                }
+
+                #[tokio::test]
+                async fn test_return_the_evaluations_between_from_and_to() {
+                    let mock = MockReturnEvalutionsBetweenFromAndTo;
+                    match mock.find_evaluations(
+                        "process-123".to_string(), 
+                        Some(FromOrToEvaluationSchema { timestamp: Some(1702677252111), ordinate: Some("3".to_string()), cron: None }), 
+                        Some(FromOrToEvaluationSchema { timestamp: Some(1702677252111), ordinate: None, cron: None }), 
+                        Some(Sort::Asc), 
+                        10, 
+                        None
+                    ).await {
+                        Ok(res) => assert!(res.len() == 2),
+                        Err(e) => panic!("{}", e)
+                    }
                 }
             }
         }

@@ -64,11 +64,11 @@ pub trait SaveEvaluationSchema {
 pub trait FindEvaluationsSchema {
     /// sort defauls to Asc
     /// only_cron defaults to false
-    async fn find_evaluations_schema(
+    async fn find_evaluations(
         &self,
         process_id: String, 
-        from: FromOrToEvaluationSchema, 
-        to: FromOrToEvaluationSchema, 
+        from: Option<FromOrToEvaluationSchema>, 
+        to: Option<FromOrToEvaluationSchema>, 
         sort: Option<Sort>, 
         limit: i64, 
         only_cron: Option<bool>
