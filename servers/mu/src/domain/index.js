@@ -1,11 +1,13 @@
 import warpArBundles from 'warp-arbundles'
 import { connect as schedulerUtilsConnect } from '@permaweb/ao-scheduler-utils'
+import { fromPromise } from 'hyper-async'
 
 import cuClient from './clients/cu.js'
 import schedulerClient from './clients/scheduler.js'
 import signerClient from './clients/signer.js'
 import uploaderClient from './clients/uploader.js'
 import osClient from './clients/os.js'
+import gatewayClient from './clients/gateway.js'
 import * as InMemoryClient from './clients/in-memory.js'
 
 import { processMsgWith } from './api/processMsg.js'
@@ -46,6 +48,10 @@ export const createApis = (ctx) => {
   const getByProcess = InMemoryClient.getByProcessWith({ cache })
   const setByProcess = InMemoryClient.setByProcessWith({ cache })
 
+  const isWalletCache = InMemoryClient.createLruCache({ size: 1000 })
+  const getById = InMemoryClient.getByIdWith({ cache: isWalletCache })
+  const setById = InMemoryClient.setByIdWith({ cache: isWalletCache })
+
   const processMsgLogger = logger.child('processMsg')
   const processMsg = processMsgWith({
     selectNode: cuClient.selectNodeWith({ CU_URL, logger: processMsgLogger }),
@@ -57,6 +63,7 @@ export const createApis = (ctx) => {
     buildAndSign: signerClient.buildAndSignWith({ MU_WALLET, logger: processMsgLogger }),
     fetchResult: cuClient.resultWith({ fetch, CU_URL, logger: processMsgLogger }),
     logger,
+    isWallet: gatewayClient.isWalletWith({ fetch, GRAPHQL_URL: ctx.GRAPHQL_URL, logger: processMsgLogger, setById, getById }),
     writeDataItemArweave: uploaderClient.uploadDataItemWith({ UPLOADER_URL, logger: processMsgLogger, fetch })
   })
 
@@ -96,7 +103,9 @@ export const createApis = (ctx) => {
     fetchResult: cuClient.resultWith({ fetch, CU_URL, logger: sendDataItemLogger }),
     fetchSchedulerProcess: schedulerClient.fetchSchedulerProcessWith({ getByProcess, setByProcess, fetch, logger: sendDataItemLogger }),
     crank: crankMsgs,
-    logger: sendDataItemLogger
+    isWallet: gatewayClient.isWalletWith({ fetch, GRAPHQL_URL: ctx.GRAPHQL_URL, logger: sendDataItemLogger }),
+    logger: sendDataItemLogger,
+    writeDataItemArweave: uploaderClient.uploadDataItemWith({ UPLOADER_URL, logger: sendDataItemLogger, fetch })
   })
 
   const sendAssignLogger = logger.child('sendAssign')
@@ -123,5 +132,18 @@ export const createApis = (ctx) => {
     logger: monitorProcessLogger
   })
 
-  return { sendDataItem, crankMsgs, monitorProcess, stopMonitorProcess, sendAssign }
+  const cronLogger = logger.child('fetchCron')
+  const fetchCron = fromPromise(cuClient.fetchCronWith({ CU_URL, logger: cronLogger }))
+
+  return {
+    sendDataItem,
+    crankMsgs,
+    monitorProcess,
+    stopMonitorProcess,
+    sendAssign,
+    fetchCron,
+    processMsg,
+    processAssign,
+    processSpawn
+  }
 }

@@ -2,8 +2,10 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+<<<<<<< HEAD
 <!-- toc -->
 
+- [[0.0.19](https://github.com/permaweb/ao/compare/scheduler-utils@v0.0.18...scheduler-utils@v0.0.19) (2024-04-30)](#0019httpsgithubcompermawebaocomparescheduler-utilsv0018scheduler-utilsv0019-2024-04-30)
 - [[0.0.18](https://github.com/permaweb/ao/compare/scheduler-utils@v0.0.17...scheduler-utils@v0.0.18) (2024-04-17)](#0018httpsgithubcompermawebaocomparescheduler-utilsv0017scheduler-utilsv0018-2024-04-17)
   - [Bug Fixes](#bug-fixes)
 - [[0.0.17](https://github.com/permaweb/ao/compare/scheduler-utils@v0.0.16...scheduler-utils@v0.0.17) (2024-04-03)](#0017httpsgithubcompermawebaocomparescheduler-utilsv0016scheduler-utilsv0017-2024-04-03)
@@ -40,6 +42,9 @@ All notable changes to this project will be documented in this file. See [commit
   - [Features](#features-7)
 
 <!-- tocstop -->
+=======
+## [0.0.19](https://github.com/permaweb/ao/compare/scheduler-utils@v0.0.18...scheduler-utils@v0.0.19) (2024-04-30)
+>>>>>>> cf8d0af29e5233b7b57bb1ffd89872d196dbe34c
 
 ## [0.0.18](https://github.com/permaweb/ao/compare/scheduler-utils@v0.0.17...scheduler-utils@v0.0.18) (2024-04-17)
 

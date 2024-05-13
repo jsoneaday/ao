@@ -27,6 +27,14 @@ export const domainConfigSchema = z.object({
    */
   PROCESS_WASM_COMPUTE_MAX_LIMIT: positiveIntSchema,
   /**
+   * The wasm module formats that this CU supports
+   */
+  PROCESS_WASM_SUPPORTED_FORMATS: commaDelimitedArraySchema,
+  /**
+   * The wasm extensions that this CU supports
+   */
+  PROCESS_WASM_SUPPORTED_EXTENSIONS: commaDelimitedArraySchema,
+  /**
    * The url for the graphql server to be used by the CU
    * to query for metadata from an Arweave Gateway
    *
@@ -123,6 +131,18 @@ export const domainConfigSchema = z.object({
    */
   PROCESS_MEMORY_CACHE_TTL: positiveIntSchema,
   /**
+   * The time in milliseconds that a process' Memory should remain in the heap,
+   * as part of the cache entry, before being drained to a file.
+   *
+   * This helps free up memory from processes who've been evalated and cached,
+   * but have not been accessed recently
+   */
+  PROCESS_MEMORY_CACHE_DRAIN_TO_FILE_THRESHOLD: positiveIntSchema,
+  /**
+   * The directory to store drained process memory files
+   */
+  PROCESS_MEMORY_CACHE_FILE_DIR: z.string().min(1),
+  /**
    * The interval at which the CU should Checkpoint all processes stored in it's
    * cache.
    *
@@ -143,7 +163,12 @@ export const domainConfigSchema = z.object({
    * A list of process ids that the CU should exclusively allow
    * aka. whitelist
    */
-  ALLOW_PROCESSES: commaDelimitedArraySchema
+  ALLOW_PROCESSES: commaDelimitedArraySchema,
+  /**
+   * A list of wallets whose processes the CU should exclusively allow
+   * aka. whitelist of processes created by these wallets
+   */
+  ALLOW_OWNERS: commaDelimitedArraySchema
 })
 
 export const streamSchema = z.any().refine(stream => {

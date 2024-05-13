@@ -34,13 +34,18 @@ async function fetchSchedulerProcess () {
   return { tags: [{ name: 'Module', value: 'mod-1' }] }
 }
 
+async function isWallet (_id) {
+  return false
+}
+
 describe('buildTx', () => {
   test('build and sign a tx from a cached msg', async () => {
     const buildTx = buildTxWith({
       buildAndSign,
       logger,
       locateProcess,
-      fetchSchedulerProcess
+      fetchSchedulerProcess,
+      isWallet
     })
 
     const result = await buildTx({
@@ -53,7 +58,7 @@ describe('buildTx', () => {
           Anchor: 'anchor-1',
           Data: 'data-1'
         },
-        processId: 'process-123'
+        fromProcessId: 'process-123'
       }
     }).toPromise()
 

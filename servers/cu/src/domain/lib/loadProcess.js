@@ -86,15 +86,24 @@ const ctxSchema = z.object({
   exact: z.boolean().default(false)
 }).passthrough()
 
-function getProcessMetaWith ({ loadProcess, locateProcess, findProcess, saveProcess, logger }) {
+function getProcessMetaWith ({ loadProcess, locateProcess, findProcess, saveProcess, isProcessOwnerSupported, logger }) {
   locateProcess = fromPromise(locateProcessSchema.implement(locateProcess))
   findProcess = fromPromise(findProcessSchema.implement(findProcess))
   saveProcess = fromPromise(saveProcessSchema.implement(saveProcess))
   loadProcess = fromPromise(loadProcessSchema.implement(loadProcess))
+  // TODO: wrap in a schema
+  isProcessOwnerSupported = fromPromise(isProcessOwnerSupported)
 
   const checkTag = (name, pred, err) => tags => pred(tags[name])
     ? Resolved(tags)
     : Rejected(`Tag '${name}': ${err}`)
+
+  const checkProcessOwner = (process) => of(process.owner)
+    .chain(isProcessOwnerSupported)
+    .chain((isSupported) => isSupported
+      ? Resolved(process)
+      : Rejected({ status: 403, message: `Access denied for process owner ${process.owner}` })
+    )
 
   function maybeCached (processId) {
     return findProcess({ processId })
@@ -175,12 +184,13 @@ function getProcessMetaWith ({ loadProcess, locateProcess, findProcess, saveProc
         tags: process.tags,
         block: process.block
       }))
+      .chain(checkProcessOwner)
 }
 
-function loadLatestEvaluationWith ({ findEvaluation, findProcessMemoryBefore, loadLatestSnapshot, saveLatestProcessMemory, logger }) {
+function loadLatestEvaluationWith ({ findEvaluation, findLatestProcessMemory, loadLatestSnapshot, saveLatestProcessMemory, logger }) {
   findEvaluation = fromPromise(findEvaluationSchema.implement(findEvaluation))
   // TODO: wrap in zod schemas to enforce contract
-  findProcessMemoryBefore = fromPromise(findProcessMemoryBefore)
+  findLatestProcessMemory = fromPromise(findLatestProcessMemory)
   loadLatestSnapshot = fromPromise(loadLatestSnapshot)
   saveLatestProcessMemory = fromPromise(saveLatestProcessMemory)
 
@@ -219,13 +229,28 @@ function loadLatestEvaluationWith ({ findEvaluation, findProcessMemoryBefore, lo
   function maybeCachedMemory (ctx) {
     logger('Checking cache for existing memory to start evaluation "%s"...', ctx.id)
 
-    return findProcessMemoryBefore({
+    return findLatestProcessMemory({
       processId: ctx.id,
       timestamp: ctx.to,
       ordinate: ctx.ordinate,
       cron: ctx.cron,
       omitMemory: false
     })
+      .bimap(
+        (err) => {
+          if (err.status !== 425) return err
+
+          const id = ctx.ordinate
+            ? `at nonce ${ctx.ordinate}`
+            : `at timestamp ${ctx.to}`
+
+          return {
+            status: 425,
+            message: `message ${id} not found cached, and earlier than latest known nonce ${err.ordinate}`
+          }
+        },
+        identity
+      )
       .chain((found) => {
         const exact = found.timestamp === ctx.to &&
           found.ordinate === ctx.ordinate &&
@@ -237,7 +262,8 @@ function loadLatestEvaluationWith ({ findEvaluation, findProcessMemoryBefore, lo
              * Nothing to backfill in-memory cache with,
              * so simply noop
              */
-            if (['memory', 'cold_start'].includes(found.src)) return Resolved(found)
+            if (['cold_start'].includes(found.src)) return Resolved(found)
+            if (['memory'].includes(found.src) && !found.fromFile) return Resolved(found)
 
             logger(
               'Seeding cache with latest checkpoint found with parameters "%j"',

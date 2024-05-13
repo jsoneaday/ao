@@ -19,10 +19,14 @@ describe('loadProcess', () => {
       { name: 'balances', value: JSON.stringify({ 'myOVEwyX7QKFaPkXo3Wlib-Q80MOf5xyjL9ZyvYSVYc': 1000 }) }
     ]
     const loadProcess = loadProcessWith({
+      isProcessOwnerSupported: async (owner) => {
+        assert.equal(owner, 'woohoo')
+        return true
+      },
       findProcess: async () => { throw { status: 404 } },
       saveProcess: async () => PROCESS,
       findEvaluation: async () => { throw { status: 404 } },
-      findProcessMemoryBefore: async () => ({
+      findLatestProcessMemory: async () => ({
         src: 'cold_start',
         Memory: null,
         moduleId: undefined,
@@ -80,6 +84,7 @@ describe('loadProcess', () => {
       { name: 'Scheduler', value: 'scheduler-123' }
     ]
     const loadProcess = loadProcessWith({
+      isProcessOwnerSupported: async (process) => true,
       findProcess: async () => ({
         id: PROCESS,
         owner: 'woohoo',
@@ -91,7 +96,7 @@ describe('loadProcess', () => {
       }),
       saveProcess: async () => assert.fail('should not save if found in db'),
       findEvaluation: async () => { throw { status: 404 } },
-      findProcessMemoryBefore: async () => ({
+      findLatestProcessMemory: async () => ({
         src: 'cold_start',
         Memory: null,
         moduleId: undefined,
@@ -153,10 +158,11 @@ describe('loadProcess', () => {
       { name: 'Foo', value: 'Bar' }
     ]
     const loadProcess = loadProcessWith({
+      isProcessOwnerSupported: async (process) => true,
       findProcess: async () => { throw { status: 404 } },
       saveProcess: async () => PROCESS,
       findEvaluation: async () => cachedEvaluation,
-      findProcessMemoryBefore: async ({ processId, timestamp }) => {
+      findLatestProcessMemory: async ({ processId, timestamp }) => {
         assert.fail('should not be called when exact match is found')
       },
       saveLatestProcessMemory: async () => assert.fail('should not be called if exact match if found'),
@@ -198,10 +204,11 @@ describe('loadProcess', () => {
       { name: 'Foo', value: 'Bar' }
     ]
     const loadProcess = loadProcessWith({
+      isProcessOwnerSupported: async (process) => true,
       findProcess: async () => { throw { status: 404 } },
       saveProcess: async () => PROCESS,
       findEvaluation: async () => { throw { status: 404 } },
-      findProcessMemoryBefore: async ({ processId, timestamp }) => cached,
+      findLatestProcessMemory: async ({ processId, timestamp }) => cached,
       saveLatestProcessMemory: async () => assert.fail('should not be called if memory'),
       locateProcess: async ({ processId: id }) => ({ url: 'https://foo.bar' }),
       loadProcess: async (id) => ({
@@ -239,10 +246,11 @@ describe('loadProcess', () => {
       { name: 'Foo', value: 'Bar' }
     ]
     const loadProcess = loadProcessWith({
+      isProcessOwnerSupported: async (process) => true,
       findProcess: async () => { throw { status: 404 } },
       saveProcess: async () => PROCESS,
       findEvaluation: async () => { throw { status: 404 } },
-      findProcessMemoryBefore: async ({ processId, timestamp }) => cached,
+      findLatestProcessMemory: async ({ processId, timestamp }) => cached,
       saveLatestProcessMemory: async (args) => {
         assert.deepStrictEqual(args, {
           processId: PROCESS,
@@ -273,6 +281,58 @@ describe('loadProcess', () => {
     await loadProcess({ id: PROCESS, to: 1697574792000 }).toPromise()
   })
 
+  test('backfill cache if latest from memory drained to file', async () => {
+    const cached = {
+      Memory: Buffer.from('hello world'),
+      moduleId: 'module-123',
+      timestamp: 1697574792000,
+      epoch: 0,
+      nonce: 11,
+      blockHeight: 123,
+      cron: undefined,
+      ordinate: '11'
+    }
+
+    const tags = [
+      { name: 'Module', value: 'foobar' },
+      { name: 'Data-Protocol', value: 'ao' },
+      { name: 'Type', value: 'Process' },
+      { name: 'Foo', value: 'Bar' }
+    ]
+    const loadProcess = loadProcessWith({
+      isProcessOwnerSupported: async (process) => true,
+      findProcess: async () => { throw { status: 404 } },
+      saveProcess: async () => PROCESS,
+      findEvaluation: async () => { throw { status: 404 } },
+      findLatestProcessMemory: async ({ processId, timestamp }) => cached,
+      saveLatestProcessMemory: async (args) => {
+        assert.deepStrictEqual(args, {
+          processId: PROCESS,
+          evalCount: 0,
+          Memory: cached.Memory,
+          moduleId: cached.moduleId,
+          timestamp: cached.timestamp,
+          epoch: cached.epoch,
+          nonce: cached.nonce,
+          ordinate: cached.ordinate,
+          blockHeight: cached.blockHeight,
+          cron: cached.cron
+        })
+      },
+      locateProcess: async ({ processId: id }) => ({ url: 'https://foo.bar' }),
+      loadProcess: async (id) => ({
+        owner: 'woohoo',
+        tags,
+        block: { height: 123, timestamp: 1697574792000 }
+      }),
+      logger
+    })
+
+    cached.src = 'memory'
+    cached.fromFile = 'state-process-123.dat'
+    await loadProcess({ id: PROCESS, to: 1697574792000 }).toPromise()
+  })
+
   test('save process to db if fetched from chain', async () => {
     const tags = [
       { name: 'Module', value: 'foobar' },
@@ -281,6 +341,7 @@ describe('loadProcess', () => {
       { name: 'Foo', value: 'Bar' }
     ]
     const loadProcess = loadProcessWith({
+      isProcessOwnerSupported: async (process) => true,
       findProcess: async () => { throw { status: 404 } },
       saveProcess: async (process) => {
         assert.deepStrictEqual(process, {
@@ -292,7 +353,7 @@ describe('loadProcess', () => {
         return PROCESS
       },
       findEvaluation: async () => { throw { status: 404 } },
-      findProcessMemoryBefore: async () => ({
+      findLatestProcessMemory: async () => ({
         src: 'cold_start',
         Memory: null,
         moduleId: undefined,
@@ -324,10 +385,11 @@ describe('loadProcess', () => {
       { name: 'Foo', value: 'Bar' }
     ]
     const loadProcess = loadProcessWith({
+      isProcessOwnerSupported: async (process) => true,
       findProcess: async () => { throw { status: 404 } },
       saveProcess: async () => { throw { status: 409 } },
       findEvaluation: async () => { throw { status: 404 } },
-      findProcessMemoryBefore: async () => ({
+      findLatestProcessMemory: async () => ({
         src: 'cold_start',
         Memory: null,
         moduleId: undefined,
@@ -355,12 +417,57 @@ describe('loadProcess', () => {
     assert.equal(res.id, PROCESS)
   })
 
-  test('throw if the Module tag is not provided', async () => {
+  test('bubble 425 if latestProcessMemory is later than requested message', async () => {
+    const tags = [
+      { name: 'Module', value: 'foobar' },
+      { name: 'Data-Protocol', value: 'ao' },
+      { name: 'Type', value: 'Process' },
+      { name: 'Foo', value: 'Bar' }
+    ]
     const loadProcess = loadProcessWith({
+      isProcessOwnerSupported: async (process) => true,
       findProcess: async () => { throw { status: 404 } },
       saveProcess: async () => PROCESS,
       findEvaluation: async () => { throw { status: 404 } },
-      findProcessMemoryBefore: async () => ({
+      findLatestProcessMemory: async ({ processId, timestamp }) => {
+        throw { status: 425, ordinate: '12', message: 'foobar' }
+      },
+      saveLatestProcessMemory: async () => assert.fail('should not be called if memory'),
+      locateProcess: async ({ processId: id }) => ({ url: 'https://foo.bar' }),
+      loadProcess: async (id) => ({
+        owner: 'woohoo',
+        tags,
+        block: { height: 123, timestamp: 1697574792000 }
+      }),
+      logger
+    })
+
+    // timestamp
+    await loadProcess({ id: PROCESS, to: 1697574792000 })
+      .toPromise()
+      .then(() => assert.fail('should have rejected'))
+      .catch((err) => assert.deepStrictEqual(err, {
+        status: 425,
+        message: 'message at timestamp 1697574792000 not found cached, and earlier than latest known nonce 12'
+      }))
+
+    // ordinate
+    await loadProcess({ id: PROCESS, ordinate: 11 })
+      .toPromise()
+      .then(() => assert.fail('should have rejected'))
+      .catch((err) => assert.deepStrictEqual(err, {
+        status: 425,
+        message: 'message at nonce 11 not found cached, and earlier than latest known nonce 12'
+      }))
+  })
+
+  test('throw if the Module tag is not provided', async () => {
+    const loadProcess = loadProcessWith({
+      isProcessOwnerSupported: async (process) => true,
+      findProcess: async () => { throw { status: 404 } },
+      saveProcess: async () => PROCESS,
+      findEvaluation: async () => { throw { status: 404 } },
+      findLatestProcessMemory: async () => ({
         src: 'cold_start',
         Memory: null,
         moduleId: undefined,
@@ -392,10 +499,11 @@ describe('loadProcess', () => {
 
   test('throw if the Data-Protocol tag is not "ao"', async () => {
     const loadProcess = loadProcessWith({
+      isProcessOwnerSupported: async (process) => true,
       findProcess: async () => { throw { status: 404 } },
       saveProcess: async () => PROCESS,
       findEvaluation: async () => { throw { status: 404 } },
-      findProcessMemoryBefore: async () => ({
+      findLatestProcessMemory: async () => ({
         src: 'cold_start',
         Memory: null,
         moduleId: undefined,
@@ -427,10 +535,11 @@ describe('loadProcess', () => {
 
   test('throw if the Type tag is not "Process"', async () => {
     const loadProcess = loadProcessWith({
+      isProcessOwnerSupported: async (process) => true,
       findProcess: async () => { throw { status: 404 } },
       saveProcess: async () => PROCESS,
       findEvaluation: async () => { throw { status: 404 } },
-      findProcessMemoryBefore: async () => ({
+      findLatestProcessMemory: async () => ({
         src: 'cold_start',
         Memory: null,
         moduleId: undefined,
@@ -458,5 +567,38 @@ describe('loadProcess', () => {
     await loadProcess({ id: PROCESS }).toPromise()
       .then(() => assert.fail('unreachable. Should have thrown'))
       .catch(err => assert.equal(err, "Tag 'Type': value 'Process' was not found on process"))
+  })
+
+  test('throw if the process owner is not allowed', async () => {
+    const tags = [
+      { name: 'Module', value: 'foobar' },
+      { name: 'Data-Protocol', value: 'ao' },
+      { name: 'Type', value: 'Process' },
+      { name: 'Foo', value: 'Bar' },
+      { name: 'Scheduler', value: 'scheduler-123' }
+    ]
+    const loadProcess = loadProcessWith({
+      isProcessOwnerSupported: async (process) => false,
+      findProcess: async () => ({
+        id: PROCESS,
+        owner: 'woohoo',
+        signature: 'sig-123',
+        anchor: null,
+        data: 'data-123',
+        tags,
+        block: { height: 123, timestamp: 1697574792 }
+      }),
+      saveProcess: async () => assert.fail('should not save if found in db'),
+      findEvaluation: async () => assert.fail('should not get to the point of checking memory'),
+      findLatestProcessMemory: async () => assert.fail('should not get to the point of checking memory'),
+      saveLatestProcessMemory: async () => assert.fail('should not get to the point of checking memory'),
+      locateProcess: async ({ processId, schedulerHint }) => ({ url: 'https://from.cache' }),
+      loadProcess: async (_id) => assert.fail('should not load process block if found in db'),
+      logger
+    })
+
+    await loadProcess({ id: PROCESS }).toPromise()
+      .then(() => assert.fail('unreachable. Should have thrown'))
+      .catch(err => assert.deepStrictEqual(err, { status: 403, message: 'Access denied for process owner woohoo' }))
   })
 })
