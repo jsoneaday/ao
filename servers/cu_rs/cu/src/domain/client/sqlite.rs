@@ -248,6 +248,7 @@ async fn setup_wal_checkpoint(options: SqliteConnectOptions, url: &str, bootstra
  * This will cause only string with a given prefix to match a range query
  */
 pub const COLLATION_SEQUENCE_MAX_CHAR: &str = "\u{10FFFF}";
+pub const COLLATION_SEQUENCE_MAX_CHAR_AS_I64: i64 = 1_114_111;
 
 /**
  * This technically isn't the smallest char, but it's small enough for our needs

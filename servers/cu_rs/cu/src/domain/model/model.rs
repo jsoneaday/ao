@@ -172,6 +172,7 @@ pub struct EvaluationSchemaExtended {
     pub is_assignment: bool
 }
 
+#[derive(Clone)]
 #[allow(unused)]
 pub struct FromOrToEvaluationSchema {
     pub timestamp: Option<i64>,

@@ -9,7 +9,7 @@ use crate::domain::dal::{FindEvaluationSchema, FindEvaluationsSchema, SaveEvalua
 use crate::domain::model::model::{EvaluationSchema, EvaluationSchemaExtended, FromOrToEvaluationSchema, Sort};
 use crate::domain::strings::{get_empty_string, get_number_string};
 use crate::domain::utils::error::{CuErrors, HttpError, SchemaValidationError};
-use super::sqlite::{SqliteClient, ConnGetter, EVALUATIONS_TABLE, MESSAGES_TABLE, COLLATION_SEQUENCE_MAX_CHAR};
+use super::sqlite::{ConnGetter, SqliteClient, COLLATION_SEQUENCE_MAX_CHAR_AS_I64, EVALUATIONS_TABLE, MESSAGES_TABLE};
 use validator::Validate;
 use async_trait::async_trait;
 
@@ -264,7 +264,7 @@ impl AoEvaluation {
               ordinate, blockHeight, cron, evaluatedAt, output
             FROM {}
             WHERE
-              id > ? AND id <= ?
+              id >= ? AND id <= ?
               {}
             ORDER BY
               timestamp {},
@@ -283,23 +283,19 @@ impl AoEvaluation {
             } else {
                 AoEvaluation::create_evaluation_id(
                     process_id.to_string(), 
-                    if let Some(from) = from { from.timestamp } else { None }, 
-                    if let Some(from) = from { from.ordinate } else { None },  
-                    if let Some(from) = from { from.cron } else { None }
+                    from.clone().unwrap().timestamp, 
+                    from.clone().unwrap().ordinate,  
+                    from.unwrap().cron
                 )
             },
             if to.is_none() {
-                AoEvaluation::create_evaluation_id(process_id.to_string(), Some(COLLATION_SEQUENCE_MAX_CHAR), None, None)
+                AoEvaluation::create_evaluation_id(process_id.to_string(), Some(COLLATION_SEQUENCE_MAX_CHAR_AS_I64), None, None)
             } else {
                 AoEvaluation::create_evaluation_id(
                     process_id.to_string(), 
-                    if let Some(to) = to { to.timestamp } else { None }, 
-                    if let Some(to) = to { 
-                        if let Some(ordinate) = to.ordinate { Some(ordinate) } else { Some(COLLATION_SEQUENCE_MAX_CHAR.to_string()) } 
-                    } else { 
-                        None 
-                    },
-                    if let Some(to) = to { to.cron } else { None }
+                    to.clone().unwrap().timestamp, 
+                    if let Some(ordinate) = to.clone().unwrap().ordinate { Some(ordinate) } else { Some(COLLATION_SEQUENCE_MAX_CHAR_AS_I64.to_string()) },
+                    to.unwrap().cron
                 )
             },
             limit.to_string()
@@ -423,7 +419,7 @@ mod tests {
                     async fn find_evaluation(&self, process_id: &str, timestamp: i64, ordinate: &str, cron: Option<String>) -> Result<Option<EvaluationSchema>, CuErrors> {
                         let query = AoEvaluation::create_find_evaluation_query(process_id, timestamp, ordinate, cron);
 
-                        assert!(query.parameters[0].as_str() == "process-123,1702677252111,1");
+                        assert!(query.parameters[0] == "process-123,1702677252111,1,");
 
                         Ok(Some(EvaluationSchema {
                             process_id: "process-123".to_string(),
@@ -514,7 +510,7 @@ mod tests {
                         match AoEvaluation::create_save_evaluation_queries(evaluation) {
                             Ok(statements) => {
                                 let first_query = &statements[0];
-                                assert!(first_query.parameters[0].as_str() == "process-123,1702677252111,1");
+                                assert!(first_query.parameters[0].as_str() == "process-123,1702677252111,1,");
                                 assert!(first_query.parameters[1].as_str() == "process-123");
                                 assert!(first_query.parameters[2].as_str() == "message-123");
                                 assert!(first_query.parameters[3].as_str() == "deepHash-123");
@@ -567,7 +563,7 @@ mod tests {
                         match AoEvaluation::create_save_evaluation_queries(evaluation) {
                             Ok(statements) => {
                                 let first_query = &statements[0];
-                                assert!(first_query.parameters[0].as_str() == "process-123,1702677252111,1");
+                                assert!(first_query.parameters[0].as_str() == "process-123,1702677252111,1,");
                                 assert!(first_query.parameters[1].as_str() == "process-123");
                                 assert!(first_query.parameters[2].as_str() == "message-123");
                                 assert!(first_query.parameters[3].as_str() == "deepHash-123");
@@ -620,7 +616,7 @@ mod tests {
                         match AoEvaluation::create_save_evaluation_queries(evaluation) {
                             Ok(statements) => {
                                 let first_query = &statements[0];
-                                assert!(first_query.parameters[0].as_str() == "process-123,1702677252111,1");
+                                assert!(first_query.parameters[0].as_str() == "process-123,1702677252111,1,");
                                 assert!(first_query.parameters[1].as_str() == "process-123");
                                 assert!(first_query.parameters[2].as_str() == "message-123");
                                 assert!(first_query.parameters[3].as_str() == "");
@@ -755,7 +751,7 @@ mod tests {
                         assert!(query.sql.contains("cron ASC"));
 
                         assert!(query.parameters[0] == "process-123,");
-                        assert!(query.parameters[1] == format!("process-123,{}", COLLATION_SEQUENCE_MAX_CHAR));
+                        assert!(query.parameters[1] == format!("process-123,{},", COLLATION_SEQUENCE_MAX_CHAR_AS_I64));
                         assert!(query.parameters[2] == "10");
 
                         Ok(vec![
@@ -792,7 +788,7 @@ mod tests {
                     ) -> Result<Vec<EvaluationSchema>, CuErrors> {
                         let mock_eval = EvaluationSchema {
                             timestamp: 1702677252111,
-                            ordinate: "1".to_string(),
+                            ordinate: "3".to_string(),
                             deep_hash: None,
                             block_height: 1234,
                             process_id: "process-123".to_string(),
@@ -815,8 +811,8 @@ mod tests {
 
                         assert!(query.sql.contains("AND cron IS NOT NULL") != true);
 
-                        assert!(query.parameters[0] == "process-123,1702677252111,3");
-                        assert!(query.parameters[1] == format!("process-123,1702677252111,{}", COLLATION_SEQUENCE_MAX_CHAR));
+                        assert!(query.parameters[0] == "process-123,1702677252111,3,");
+                        assert!(query.parameters[1] == format!("process-123,1702677252111,{},", COLLATION_SEQUENCE_MAX_CHAR_AS_I64));
                         assert!(query.parameters[2] == "10");
 
                         Ok(vec![

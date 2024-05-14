@@ -3,6 +3,8 @@ use std::sync::Arc;
 #[allow(unused)]
 use chrono::Utc;
 #[allow(unused)]
+use crate::domain::client::ao_evaluation::EvaluationQuerySchema;
+#[allow(unused)]
 use crate::domain::model::model::{FromOrToEvaluationSchema, Sort};
 #[allow(unused)]
 use crate::{
@@ -124,14 +126,14 @@ async fn test_find_evaluations() {
     }).await {
         Ok(_) => {
             match evaluater.find_evaluations(
-                "process-123".to_string(), 
+                process_id.to_string(), 
                 Some(FromOrToEvaluationSchema { timestamp: Some(timestamp), ordinate: Some("1".to_string()), cron: None }), 
                 Some(FromOrToEvaluationSchema { timestamp: Some(timestamp), ordinate: None, cron: None }), 
                 Some(Sort::Asc), 
                 10, 
                 None
             ).await {
-                Ok(res) => println!("test_find_evaluations res: {:?}", res),
+                Ok(res) => assert!(res.len() == 1),
                 Err(e) => err_msg = format!("{}", e)
             }
         },
