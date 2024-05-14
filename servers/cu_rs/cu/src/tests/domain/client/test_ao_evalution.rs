@@ -5,6 +5,8 @@ use chrono::Utc;
 #[allow(unused)]
 use crate::domain::client::ao_evaluation::EvaluationQuerySchema;
 #[allow(unused)]
+use crate::domain::dal::FindMessageBeforeSchema;
+#[allow(unused)]
 use crate::domain::model::model::{FromOrToEvaluationSchema, Sort};
 #[allow(unused)]
 use crate::{
@@ -134,6 +136,56 @@ async fn test_find_evaluations() {
                 None
             ).await {
                 Ok(res) => assert!(res.len() == 1),
+                Err(e) => err_msg = format!("{}", e)
+            }
+        },
+        Err(e) => err_msg = format!("{}", e)
+    };
+
+    sql_client_arc.clone().get_conn().close().await;
+    delete_db_files(db_file);
+
+    if !err_msg.is_empty() {
+        panic!("{}", err_msg);
+    }
+}
+
+#[tokio::test]
+async fn test_find_message_before() {
+    let db_file = "aoevaluation4.db";
+    let db_url = format!("sqlite://{}", db_file);
+    let sql_client_arc = Arc::new(SqliteClient::init(db_url.as_str(), get_logger(), Some(true), None).await);
+    let process_id: &str = "process-222";
+    let message_id: &str = "message-123";
+    let timestamp = 1702677252111;
+
+    let evaluater = AoEvaluation::new(sql_client_arc.clone());
+
+    let mut err_msg = "".to_string();
+    match evaluater.save_evaluation(EvaluationSchemaExtended {
+        is_assignment: true,
+        deep_hash: Some("deepHash-123".to_string()),
+        timestamp,
+        nonce: Some(1),
+        epoch: Some(0),
+        ordinate: "1".to_string(),
+        block_height: 1234,
+        cron: None,
+        process_id: process_id.to_string(),
+        message_id: Some(message_id.to_string()),
+        output: json!({ "Messages": [{ "foo": "bar" }], "Memory": "foo" }),
+        evaluated_at: Utc::now()
+    }).await {
+        Ok(_) => {
+            match evaluater.find_message_before(
+                message_id.to_string(), 
+                None, 
+                true, 
+                process_id.to_string(),
+                0,
+                2
+            ).await {
+                Ok(res) => println!("res: {:?}", res),
                 Err(e) => err_msg = format!("{}", e)
             }
         },

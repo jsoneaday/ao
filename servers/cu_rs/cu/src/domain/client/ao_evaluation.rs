@@ -1017,7 +1017,7 @@ mod tests {
                 async fn test_return_404_status_if_not_found() {
                     let mock = MockIsAnAssignment;
                     match mock.find_message_before("message-123".to_string(), Some("deepHash-123".to_string()), true, "process-123".to_string(), 0, 3).await {
-                        Ok(res) => panic!("Should not return message"),
+                        Ok(_) => panic!("Should not return message"),
                         Err(e) => if let CuErrors::HttpStatus(e) = e {
                             assert!(e.status == 404);
                         } else {

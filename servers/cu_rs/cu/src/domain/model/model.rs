@@ -30,6 +30,7 @@ pub fn domain_config_schema<'a>(start_schema: StartDomainConfigSchema) -> &'a Re
     })
 }
 
+#[derive(Debug)]
 pub struct EntityId {
     pub id: String
 }
@@ -80,7 +81,7 @@ pub struct MessageMetaSchema {
 #[allow(unused)]
 pub struct MessageBeforeSchema {
     pub id: String,
-    pub seq: i64
+    pub seq: String
 }
 
 #[allow(unused)]
