@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::sqlite::SqliteRow;
 use sqlx::{FromRow, Row, Sqlite};
-use crate::domain::dal::{FindEvaluationSchema, FindEvaluationsSchema, SaveEvaluationSchema};
-use crate::domain::model::model::{EvaluationSchema, EvaluationSchemaExtended, FromOrToEvaluationSchema, Sort};
+use crate::domain::dal::{FindEvaluationSchema, FindEvaluationsSchema, FindMessageBeforeSchema, SaveEvaluationSchema};
+use crate::domain::model::model::{EntityId, EvaluationSchema, EvaluationSchemaExtended, FromOrToEvaluationSchema, MessageBeforeSchema, Sort};
 use crate::domain::strings::{get_empty_string, get_number_string};
 use crate::domain::utils::error::{CuErrors, HttpError, SchemaValidationError};
 use super::sqlite::{ConnGetter, SqliteClient, COLLATION_SEQUENCE_MAX_CHAR_AS_I64, EVALUATIONS_TABLE, MESSAGES_TABLE};
@@ -302,6 +302,26 @@ impl AoEvaluation {
           ]
         }
     }
+
+    fn create_find_message_before_query (message_id: String, deep_hash: Option<String>, is_assignment: bool, process_id: String, nonce: i64, epoch: i64) -> Query {
+        Query {
+          sql: format!(r"
+            SELECT
+              id, seq
+            FROM {}
+            WHERE
+              id = ?
+              AND processId = ?
+              AND seq < ?
+            LIMIT 1;
+          ", MESSAGES_TABLE),
+          parameters: vec![
+            AoEvaluation::create_message_id(Some(message_id), deep_hash, is_assignment).unwrap(),
+            process_id,
+            format!("{}:{}", epoch, nonce) // 0:13
+          ]
+        }
+      }
 }
 
 #[async_trait]
@@ -386,6 +406,35 @@ impl FindEvaluationsSchema for AoEvaluation {
                     result.push(AoEvaluation::from_evaluation_doc(eval));
                 }
                 Ok(result)
+            },
+            Err(e) => Err(CuErrors::DatabaseError(e))
+        }
+    }
+}
+
+#[async_trait]
+impl FindMessageBeforeSchema for AoEvaluation {
+    async fn find_message_before(
+        &self,
+        message_id: String,
+        deep_hash: Option<String>,
+        is_assignment: bool,
+        process_id: String,
+        epoch: i64,
+        nonce: i64
+    ) -> Result<EntityId, CuErrors> {
+        let query = AoEvaluation::create_find_message_before_query(message_id, deep_hash, is_assignment, process_id, nonce, epoch);
+
+        let mut raw_query = sqlx::query_as::<Sqlite, MessageBeforeSchema>(&query.sql);
+        for param in query.parameters.iter() {
+            raw_query = raw_query.bind(param);
+        }
+        match raw_query.fetch_optional(self.sql_client.get_conn()).await {
+            Ok(res) => {
+                match res {
+                    Some(row) => Ok(EntityId { id: row.id }),
+                    None => Err(CuErrors::HttpStatus(HttpError { status: 404, message: "Message not found".to_string() }))
+                }
             },
             Err(e) => Err(CuErrors::DatabaseError(e))
         }
@@ -835,6 +884,145 @@ mod tests {
                     ).await {
                         Ok(res) => assert!(res.len() == 2),
                         Err(e) => panic!("{}", e)
+                    }
+                }
+            }
+        }
+
+        mod find_message_before {
+            use super::*;
+
+            mod find_prior_message_by_deep_hash {
+                use super::*;
+
+                struct MockFindPriorMsgByDeepHash;
+                #[async_trait]
+                impl FindMessageBeforeSchema for MockFindPriorMsgByDeepHash {
+                    async fn find_message_before(
+                        &self,
+                        message_id: String,
+                        deep_hash: Option<String>,
+                        is_assignment: bool,
+                        process_id: String,
+                        epoch: i64,
+                        nonce: i64
+                    ) -> Result<EntityId, CuErrors> {
+                        let query = AoEvaluation::create_find_message_before_query(message_id, deep_hash, is_assignment, process_id, nonce, epoch);
+                        assert!(query.parameters[0] == "deepHash-123");
+                        assert!(query.parameters[1] == "process-123");
+                        assert!(query.parameters[2] == "0:3");
+
+                        Ok(EntityId { id: "deepHash-123".to_string() })
+                    }
+                }
+
+                #[tokio::test]
+                async fn test_find_prior_message_by_deep_hash() {
+                    let mock = MockFindPriorMsgByDeepHash;
+                    match mock.find_message_before("message-123".to_string(), Some("deepHash-123".to_string()), false, "process-123".to_string(), 0, 3).await {
+                        Ok(res) => assert!(res.id == "deepHash-123"),
+                        Err(e) => panic!("{}", e)
+                    }
+                }
+            }
+
+            mod find_the_prior_message_by_message_id {
+                use super::*;
+
+                struct MockIfNoDeepHashWasCalculated;
+                #[async_trait]
+                impl FindMessageBeforeSchema for MockIfNoDeepHashWasCalculated {
+                    async fn find_message_before(
+                        &self,
+                        message_id: String,
+                        deep_hash: Option<String>,
+                        is_assignment: bool,
+                        process_id: String,
+                        epoch: i64,
+                        nonce: i64
+                    ) -> Result<EntityId, CuErrors> {
+                        let query = AoEvaluation::create_find_message_before_query(message_id, deep_hash, is_assignment, process_id, nonce, epoch);
+                        assert!(query.parameters[0] == "message-123");
+                        assert!(query.parameters[1] == "process-123");
+                        assert!(query.parameters[2] == "0:3");
+
+                        Ok(EntityId { id: "message-123".to_string() })
+                    }
+                }
+
+                #[tokio::test]
+                async fn test_if_no_deep_hash_was_calculated() {
+                    let mock = MockIfNoDeepHashWasCalculated;
+                    match mock.find_message_before("message-123".to_string(), None, false, "process-123".to_string(), 0, 3).await {
+                        Ok(res) => assert!(res.id == "message-123"),
+                        Err(e) => panic!("{}", e)
+                    }
+                }
+            }
+
+            mod if_it_is_an_assignment {
+                use super::*;
+
+                struct MockIsAnAssignment;
+                #[async_trait]
+                impl FindMessageBeforeSchema for MockIsAnAssignment {
+                    async fn find_message_before(
+                        &self,
+                        message_id: String,
+                        deep_hash: Option<String>,
+                        is_assignment: bool,
+                        process_id: String,
+                        epoch: i64,
+                        nonce: i64
+                    ) -> Result<EntityId, CuErrors> {
+                        let query = AoEvaluation::create_find_message_before_query(message_id, deep_hash, is_assignment, process_id, nonce, epoch);
+                        assert!(query.parameters[0] == "message-123");
+                        assert!(query.parameters[1] == "process-123");
+                        assert!(query.parameters[2] == "0:3");
+
+                        Ok(EntityId { id: "message-123".to_string() })
+                    }
+                }
+
+                #[tokio::test]
+                async fn test_if_it_is_an_assignment() {
+                    let mock = MockIsAnAssignment;
+                    match mock.find_message_before("message-123".to_string(), None, true, "process-123".to_string(), 0, 3).await {
+                        Ok(res) => assert!(res.id == "message-123"),
+                        Err(e) => panic!("{}", e)
+                    }
+                }
+            }
+
+            mod return_404_status_if_not_found {
+                use super::*;
+
+                struct MockIsAnAssignment;
+                #[async_trait]
+                impl FindMessageBeforeSchema for MockIsAnAssignment {
+                    async fn find_message_before(
+                        &self,
+                        _message_id: String,
+                        _deep_hash: Option<String>,
+                        _is_assignment: bool,
+                        _process_id: String,
+                        _epoch: i64,
+                        _nonce: i64
+                    ) -> Result<EntityId, CuErrors> {
+                        Err(CuErrors::HttpStatus(HttpError { status: 404, message: "".to_string() }))
+                    }
+                }
+
+                #[tokio::test]
+                async fn test_return_404_status_if_not_found() {
+                    let mock = MockIsAnAssignment;
+                    match mock.find_message_before("message-123".to_string(), Some("deepHash-123".to_string()), true, "process-123".to_string(), 0, 3).await {
+                        Ok(res) => panic!("Should not return message"),
+                        Err(e) => if let CuErrors::HttpStatus(e) = e {
+                            assert!(e.status == 404);
+                        } else {
+                            panic!("Returned unexpected error")
+                        }
                     }
                 }
             }

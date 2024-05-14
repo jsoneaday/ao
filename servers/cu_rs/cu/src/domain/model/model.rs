@@ -30,6 +30,10 @@ pub fn domain_config_schema<'a>(start_schema: StartDomainConfigSchema) -> &'a Re
     })
 }
 
+pub struct EntityId {
+    pub id: String
+}
+
 #[allow(unused)]
 pub struct RawTagSchema {
     name: String,
@@ -70,6 +74,13 @@ pub struct MessageMetaSchema {
     height: i64,
     timestamp: i64,
     nonce: i64
+}
+
+#[derive(FromRow)]
+#[allow(unused)]
+pub struct MessageBeforeSchema {
+    pub id: String,
+    pub seq: i64
 }
 
 #[allow(unused)]

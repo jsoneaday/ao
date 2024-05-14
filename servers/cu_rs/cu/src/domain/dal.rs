@@ -5,7 +5,7 @@ use crate::domain::model::model::{
 use async_trait::async_trait;
 use reqwest::Url;
 
-use super::{model::model::gql_return_types, utils::error::CuErrors};
+use super::{model::model::{gql_return_types, EntityId}, utils::error::CuErrors};
 
 // todo: the Vec<u8> types might be better as serde Value types?
 
@@ -77,14 +77,15 @@ pub trait FindEvaluationsSchema {
 
 #[async_trait]
 pub trait FindMessageBeforeSchema {
-    async fn find_message_before_schema(
-        message_id: Option<String>,
+    async fn find_message_before(
+        &self,
+        message_id: String,
         deep_hash: Option<String>,
         is_assignment: bool,
         process_id: String,
-        epoch: u64,
-        nonce: u64
-    ) -> Vec<u8>;
+        epoch: i64,
+        nonce: i64
+    ) -> Result<EntityId, CuErrors>;
 }
 
 #[async_trait]
