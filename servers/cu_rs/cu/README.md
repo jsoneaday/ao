@@ -2,11 +2,11 @@
 
 <!-- toc -->
 
-- [This project aims to create a native version of the CU that will allow developer to use any Tech Stack and Runtine to build on AO](#this-project-aims-to-create-a-native-version-of-the-cu-that-will-allow-developer-to-use-any-tech-stack-and-runtine-to-build-on-ao)
+- [This project is a native version of the CU that allows developers to use any Tech Stack and Runtine to build on AO](#this-project-is-a-native-version-of-the-cu-that-allows-developers-to-use-any-tech-stack-and-runtine-to-build-on-ao)
 
 <!-- tocstop -->
 
-## This project aims to create a native version of the CU that will allow developer to use any Tech Stack and Runtine to build on AO
+## This project is a native version of the CU that allows developers to use any Tech Stack and Runtine to build on AO
 
 - Author: David Choi
 
