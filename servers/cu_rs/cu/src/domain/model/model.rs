@@ -36,26 +36,29 @@ pub struct EntityId {
     pub id: String
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[allow(unused)]
 pub struct RawTagSchema {
-    name: String,
-    value: String
+    pub name: String,
+    pub value: String
 }
 
+#[derive(Clone)]
 #[allow(unused)]
 pub struct Owner {
-    address: String,
-    key: String
+    pub address: String,
+    pub key: String
 }
 
-#[derive(Validate)]
+#[derive(Validate, Clone, Debug)]
 #[allow(unused)]
 pub struct ModuleSchema {
     #[validate(length(min = 1))]
-    id: String,    
-    tags: Vec<RawTagSchema>,    
-    owner: Owner
+    pub id: String, 
+    /// A json string (saved as string in db)   
+    pub tags: Vec<RawTagSchema>,    
+    #[validate(length(min = 1))]
+    pub owner: String
 }
 
 #[derive(FromRow)]
