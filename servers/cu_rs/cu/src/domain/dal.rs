@@ -41,7 +41,7 @@ pub trait FindModuleSchema {
 
 #[async_trait]
 pub trait SaveModuleSchema {
-    async fn save_module_schema(module_schema: ModuleSchema) -> Vec<u8>;
+    async fn save_module(module_schema: ModuleSchema) -> Result<(), CuErrors>;
 }
 
 #[async_trait]

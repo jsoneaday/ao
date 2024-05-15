@@ -4,6 +4,7 @@ use serde_json::Value;
 use sqlx::prelude::FromRow;
 use valid::ValidationError;
 use once_cell::sync::OnceCell;
+use validator::Validate;
 use super::domain_config_schema::{DomainConfigSchema, StartDomainConfigSchema};
 use super::parse_schema::StartSchemaParser;
 use serde::{Deserialize, Serialize};
@@ -35,6 +36,7 @@ pub struct EntityId {
     pub id: String
 }
 
+#[derive(Serialize)]
 #[allow(unused)]
 pub struct RawTagSchema {
     name: String,
@@ -47,19 +49,13 @@ pub struct Owner {
     key: String
 }
 
-#[allow(unused)]
-pub struct SimpleModuleSchema {
-    id: String,
-    /// address
-    owner: String,
-    tags: Vec<RawTagSchema>
-}
-
+#[derive(Validate)]
 #[allow(unused)]
 pub struct ModuleSchema {
-    id: String,
-    owner: Owner,
-    tags: Vec<RawTagSchema>
+    #[validate(length(min = 1))]
+    id: String,    
+    tags: Vec<RawTagSchema>,    
+    owner: Owner
 }
 
 #[derive(FromRow)]
