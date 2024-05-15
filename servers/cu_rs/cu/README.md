@@ -1,14 +1,13 @@
 # The Rust version of the CU in the AO Computer
 
-# This project aims to create a native version of the CU that will allow developer to use any Tech Stack and Runtine to build on AO
-
 <!-- toc -->
 
-- [Author - David Choi](#author---david-choi)
-- [License Apache 2.0](#license-apache-20)
+- [This project aims to create a native version of the CU that will allow developer to use any Tech Stack and Runtine to build on AO](#this-project-aims-to-create-a-native-version-of-the-cu-that-will-allow-developer-to-use-any-tech-stack-and-runtine-to-build-on-ao)
 
 <!-- tocstop -->
 
-## Author - David Choi
+## This project aims to create a native version of the CU that will allow developer to use any Tech Stack and Runtine to build on AO
 
-## License Apache 2.0
+- Author: David Choi
+
+- License: Apache 2.0
