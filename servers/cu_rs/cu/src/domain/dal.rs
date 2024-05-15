@@ -36,7 +36,7 @@ pub trait SaveProcessSchema {
 
 #[async_trait]
 pub trait FindModuleSchema {
-    async fn find_module(&self, module_id: String) -> Result<Option<ModuleSchema>, CuErrors>;
+    async fn find_module(&self, module_id: &str) -> Result<Option<ModuleSchema>, CuErrors>;
 }
 
 #[async_trait]

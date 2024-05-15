@@ -63,7 +63,7 @@ async fn test_find_module() {
         ]
     }).await {
         Ok(module_id) => {
-            match ao.find_module(module_id.clone()).await {
+            match ao.find_module(&module_id).await {
                 Ok(res) => {
                     println!("res {:?}", res.clone().unwrap());   
                     assert!(res.unwrap().id == module_id)

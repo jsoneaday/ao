@@ -62,7 +62,7 @@ impl AoModule {
         }
     }
 
-    fn create_find_module_query (module_id: String) -> Query {
+    fn create_find_module_query (module_id: &str) -> Query {
         Query {
           sql: format!(r"
             SELECT id, tags, owner
@@ -70,7 +70,7 @@ impl AoModule {
             WHERE
               id = ?
           ", MODULES_TABLE),
-          parameters: vec![module_id]
+          parameters: vec![module_id.to_string()]
         }
     }
 
@@ -92,7 +92,7 @@ impl AoModule {
 
 #[async_trait]
 impl FindModuleSchema for AoModule {
-    async fn find_module(&self, module_id: String) -> Result<Option<ModuleSchema>, CuErrors> {
+    async fn find_module(&self, module_id: &str) -> Result<Option<ModuleSchema>, CuErrors> {
         let query = AoModule::create_find_module_query(module_id);
 
         let mut raw_query = sqlx::query_as::<_, ModuleQuerySchema>(&query.sql);
@@ -132,6 +132,108 @@ impl SaveModuleSchema for AoModule {
                 Ok(module_doc.id.clone())
             },
             Err(e) => Err(CuErrors::DatabaseError(e))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    mod ao_module {
+        use super::*;
+
+        mod find_module {
+            use super::*;
+
+            mod find_the_module {
+                use super::*;
+
+                struct MockFindTheModule;
+                #[async_trait]
+                impl FindModuleSchema for MockFindTheModule {
+                    async fn find_module(&self, _module_id: &str) -> Result<Option<ModuleSchema>, CuErrors> {
+                        Ok(
+                            Some(
+                                ModuleSchema {
+                                    id: "mod-123".to_string(),
+                                    tags: vec![
+                                        RawTagSchema {
+                                            name: "foo".to_string(),
+                                            value: "bar".to_string()
+                                        }
+                                    ],
+                                    owner: "owner-123".to_string()
+                                }
+                            )
+                        )
+                    }
+                }
+
+                #[tokio::test]
+                async fn test_find_the_module() {
+                    let mock = MockFindTheModule;
+                    match mock.find_module("mod-123").await {
+                        Ok(res) => {
+                            assert!(res.clone().unwrap().id == "mod-123");
+                            assert!(res.clone().unwrap().tags[0].name == "foo");
+                            assert!(res.clone().unwrap().tags[0].value == "bar");
+                            assert!(res.unwrap().owner == "owner-123");
+                        },
+                        Err(e) => panic!("{}", e)
+                    }
+                }
+            }
+
+            mod return_404_status_if_not_found {
+                use super::*;
+
+                struct MockReturn404IfNotFound;
+                #[async_trait]
+                impl FindModuleSchema for MockReturn404IfNotFound {
+                    async fn find_module(&self, _module_id: &str) -> Result<Option<ModuleSchema>, CuErrors> {
+                        Err(CuErrors::HttpStatus(HttpError { status: 404, message: "Not found".to_string() }))
+                    }
+                }
+
+                #[tokio::test]
+                async fn test_return_404_status_if_not_found() {
+                    let mock = MockReturn404IfNotFound;
+                    match mock.find_module("mod-123").await {
+                        Ok(_) => panic!("Returned unexpected row item"),
+                        Err(e) => if let CuErrors::HttpStatus(e) = e {
+                            assert!(e.status == 404);
+                        } else {
+                            panic!("Returned unexpected error")
+                        }
+                    }
+                }
+            }
+
+            mod bubble_error {
+                use super::*;
+
+                struct MockBubbleError;
+                #[async_trait]
+                impl FindModuleSchema for MockBubbleError {
+                    async fn find_module(&self, _module_id: &str) -> Result<Option<ModuleSchema>, CuErrors> {
+                        Err(CuErrors::HttpStatus(HttpError { status: 500, message: "Internal Server Error".to_string() }))
+                    }
+                }
+
+                #[tokio::test]
+                async fn test_bubble_error() {
+                    let mock = MockBubbleError;
+                    match mock.find_module("mod-123").await {
+                        Ok(_) => panic!("Returned unexpected row item"),
+                        Err(e) => if let CuErrors::HttpStatus(e) = e {
+                            assert!(e.status == 500);
+                        } else {
+                            panic!("Returned unexpected error")
+                        }
+                    }
+                }
+            }
         }
     }
 }
