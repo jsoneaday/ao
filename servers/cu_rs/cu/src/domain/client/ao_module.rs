@@ -236,4 +236,83 @@ mod tests {
             }
         }
     }
+
+    mod save_module {
+        use super::*;
+
+        mod save_the_module {
+            use super::*;
+
+            struct MockSaveTheModule;
+            #[async_trait]
+            impl SaveModuleSchema for MockSaveTheModule {
+                async fn save_module(&self, module_schema: ModuleSchema) -> Result<String, CuErrors> {
+                    let query = AoModule::create_save_module_query(AoModule::to_module_doc(module_schema.clone()));
+
+                    assert!(query.parameters[0] == "mod-123");
+                    assert!(query.parameters[1] == serde_json::to_string(&vec![
+                        RawTagSchema {
+                            name: "Module-Format".to_string(),
+                            value: "wasm32-unknown-emscripten".to_string()
+                        }
+                    ]).unwrap());
+                    assert!(query.parameters[2] == "owner-123");
+
+                    Ok(module_schema.id)
+                }
+            }
+
+            #[tokio::test]
+            async fn test_save_the_module() {
+                let mock = MockSaveTheModule;
+                match mock.save_module(ModuleSchema {
+                    id: "mod-123".to_string(), 
+                    tags: vec![
+                        RawTagSchema {
+                            name: "Module-Format".to_string(),
+                            value: "wasm32-unknown-emscripten".to_string()
+                        }
+                    ], 
+                    owner: "owner-123".to_string()
+                }).await {
+                    Ok(id) => assert!(id == "mod-123"),
+                    Err(e) => panic!("{}", e)
+                }
+            }
+        }
+
+        mod noop_if_the_module_already_exists {
+            use super::*;
+
+            struct MockNoopIfAlreadyExists;
+            #[async_trait]
+            impl SaveModuleSchema for MockNoopIfAlreadyExists {
+                async fn save_module(&self, module_schema: ModuleSchema) -> Result<String, CuErrors> {
+                    let query = AoModule::create_save_module_query(AoModule::to_module_doc(module_schema.clone()));
+
+                    assert!(query.sql.contains("INSERT OR IGNORE"));
+
+                    Ok(module_schema.id)
+                }
+            }
+
+            #[tokio::test]
+            async fn test_noop_if_the_module_already_exists() {
+                let mock = MockNoopIfAlreadyExists;
+                match mock.save_module(ModuleSchema {
+                    id: "mod-123".to_string(), 
+                    tags: vec![
+                        RawTagSchema {
+                            name: "Module-Format".to_string(),
+                            value: "wasm32-unknown-emscripten".to_string()
+                        }
+                    ], 
+                    owner: "owner-123".to_string()
+                }).await {
+                    Ok(id) => assert!(id == "mod-123"),
+                    Err(e) => panic!("{}", e)
+                }
+            }
+        }
+    }
 }
