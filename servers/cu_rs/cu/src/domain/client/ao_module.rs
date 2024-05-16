@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use async_trait::async_trait;
+use rand::RngCore;
 use serde::Serialize;
 use sqlx::{prelude::{Row, FromRow}, sqlite::SqliteRow, Sqlite};
 use validator::Validate;
@@ -88,6 +89,12 @@ impl AoModule {
             ]
         }
     }
+
+    fn stream_id() -> [u8; 8] {
+        let mut buffer = [0u8; 8];
+        rand::thread_rng().fill_bytes(&mut buffer);
+        buffer
+    }
 }
 
 #[async_trait]
@@ -135,6 +142,8 @@ impl SaveModuleSchema for AoModule {
         }
     }
 }
+
+// todo: need to implement EvaluatorSchema, but let's do after the Docker infra
 
 #[cfg(test)]
 mod tests {

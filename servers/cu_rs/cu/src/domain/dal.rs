@@ -5,7 +5,7 @@ use crate::domain::model::model::{
 use async_trait::async_trait;
 use reqwest::Url;
 
-use super::{model::model::{gql_return_types, EntityId}, utils::error::CuErrors};
+use super::{model::model::{gql_return_types, EntityId, EvaluateArgs, ModuleOptions, Output}, utils::error::CuErrors};
 
 // todo: the Vec<u8> types might be better as serde Value types?
 
@@ -46,7 +46,8 @@ pub trait SaveModuleSchema {
 
 #[async_trait]
 pub trait EvaluatorSchema {
-    async fn evaluator_schema(input: Vec<u8>) -> Vec<u8>;
+    async fn evaluator<F>(&self, evaluate: F, module_id: &str, module_options: ModuleOptions, args: EvaluateArgs) 
+        where F: Fn(EvaluateArgs) -> Result<Output, CuErrors>;
 }
 
 #[async_trait]

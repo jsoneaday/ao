@@ -232,3 +232,62 @@ pub mod gql_return_types {
         pub height: i64
     }
 }
+
+#[derive(Serialize, Deserialize)]
+pub struct Message {
+    #[serde(rename = "Id")]
+    pub id: String,
+    #[serde(rename = "Timestamp")]
+    pub timestamp: i64,
+    #[serde(rename = "Owner")]
+    pub owner: String,
+    #[serde(rename = "Tags")]
+    pub tags: Vec<RawTagSchema>,
+    #[serde(rename = "Block-Height")]
+    pub block_height: i64
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct Process {
+    #[serde(rename = "Id")]
+    pub id: String,
+    #[serde(rename = "Tags")]
+    pub tags: Vec<RawTagSchema>
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct AoGlobal {
+    #[serde(rename = "Process")]
+    pub process: Process
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EvaluateArgs {
+    pub name: String,
+    pub no_save: bool,
+    pub deep_hash: Option<String>,
+    pub cron: Option<String>,
+    pub ordinate: String,
+    pub is_assignment: bool,
+    pub process_id: String,
+    #[serde(rename = "Memory")]
+    pub memory: Option<i64>,
+    pub message: Message,
+    #[serde(rename = "AoGlobal")]
+    pub ao_global: AoGlobal,
+    pub stream_id: [u8; 8],
+    pub module_id: String,
+    pub module_options: Option<ModuleOptions>
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModuleOptions {
+    pub format: String,
+    pub input_encoding: String,
+    pub output_encoding: String,
+    pub memory_limit: i64,
+    pub compute_limit: i64,
+    pub extensions: Vec<String>
+}
