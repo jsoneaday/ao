@@ -88,3 +88,57 @@ pub fn preprocess_urls(mut config: StartConfigEnv) -> Result<StartConfigEnv, CuE
   
     Ok(config)
 }
+
+pub struct PartialEvaluationSchema {
+    pub timestamp: i64,
+    pub cron: Option<String>
+}
+
+pub fn is_earlier_than(eval1: PartialEvaluationSchema, eval2: PartialEvaluationSchema) -> bool {
+    let t1 = format!("{}", eval1.timestamp);
+    let t2 = format!("{}", eval2.timestamp);
+    // /**
+    // * timestamps are equal some might be two crons on overlapping interval,
+    // * so compare the crons
+    // */
+    if t2 == t1 {
+        let c1 = if let Some(cron) = eval1.cron {
+            cron
+        } else {
+            "".to_string()
+        };
+        let c2 = if let Some(cron) = eval2.cron {
+            cron
+        } else {
+            "".to_string()
+        };
+        return c2 > c1
+    }
+
+    t2 > t1
+}
+
+pub fn is_later_then(eval1: PartialEvaluationSchema, eval2: PartialEvaluationSchema) -> bool {
+    !is_earlier_than(eval1, eval2)
+}
+
+pub fn is_equal_to(eval1: PartialEvaluationSchema, eval2: PartialEvaluationSchema) -> bool {
+    let t1 = format!("{}", eval1.timestamp);
+    let t2 = format!("{}", eval2.timestamp);
+    
+    let c1 = if let Some(cron) = eval1.cron {
+        cron
+    } else {
+        "".to_string()
+    };
+    let c2 = if let Some(cron) = eval2.cron {
+        cron
+    } else {
+        "".to_string()
+    };
+
+    if t2 == t1 && c2 == c1 {
+        return true;
+    }
+    false
+}

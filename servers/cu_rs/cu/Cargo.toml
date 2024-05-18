@@ -54,8 +54,10 @@ sha2 = "0.10.8"
 sqlx = { version = "0.7.4", features = ["sqlite", "runtime-tokio-rustls", "chrono"]}
 tokio = { version = "1.36.0", features = ["full"] }
 tokio-stream = "0.1.15"
+tokio-util = "0.7.11"
 uuid = { version = "1.8.0", features = ["v4", "serde"] }
 valid = { version = "0.3.1", features = ["serde1"] }
 validator = { version = "0.18.1", features = ["derive"] }
 wasmedge-sdk = "0.13.2"
 wasm-bindgen = "0.2.92"
+moka = { version = "0.12.7", features = ["future"] }

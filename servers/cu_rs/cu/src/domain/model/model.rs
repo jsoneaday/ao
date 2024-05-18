@@ -9,6 +9,8 @@ use super::domain_config_schema::{DomainConfigSchema, StartDomainConfigSchema};
 use super::parse_schema::StartSchemaParser;
 use serde::{Deserialize, Serialize};
 
+// todo: need to add validation and constraints into Schema defs
+
 static DOMAIN_CONFIG_SCHEMA: OnceCell<Result<DomainConfigSchema, ValidationError>> = OnceCell::new();
 
 pub enum Sort {
@@ -83,13 +85,15 @@ pub struct MessageBeforeSchema {
     pub seq: String
 }
 
+#[derive(Validate)]
 #[allow(unused)]
 pub struct ProcessSchema {
+    #[validate(length(min = 1))]
     id: String,
     signature: Option<String>,
     data: Option<Vec<u8>>,
     anchor: Option<String>,
-    /// min 1
+    #[validate(length(min = 1))]
     owner: String,
     tags: Vec<RawTagSchema>,
     block: BlockSchema

@@ -10,6 +10,7 @@ pub mod client {
     pub mod ao_block;
     pub mod ao_evaluation;
     pub mod ao_module;
+    pub mod ao_process;
     pub mod arweave;
     pub mod sqlite;
 }

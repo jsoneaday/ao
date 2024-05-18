@@ -90,6 +90,8 @@ impl AoModule {
         }
     }
 
+    #[allow(unused)]
+    /// will be used once the EvaluatorSchema is done
     fn stream_id() -> [u8; 8] {
         let mut buffer = [0u8; 8];
         rand::thread_rng().fill_bytes(&mut buffer);
