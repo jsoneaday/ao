@@ -466,17 +466,17 @@ mod tests {
     use super::*;
 
     mod ao_process {
+        use chrono::Utc;
+        use once_cell::sync::Lazy;
         use super::*;
 
+        static NOW: Lazy<i64> = Lazy::new(|| {
+            Utc::now().timestamp_millis()
+        });
+
         mod find_process {
-            use chrono::Utc;
-            use once_cell::sync::Lazy;
             use crate::domain::model::model::BlockSchema;
             use super::*;
-
-            static NOW: Lazy<i64> = Lazy::new(|| {
-                Utc::now().timestamp_millis()
-            });
 
             mod find_the_process {
                 use super::*;
@@ -570,6 +570,109 @@ mod tests {
                         } else {
                             panic!("Wrong error provided")
                         }
+                    }
+                }
+            }
+        }
+
+        mod save_process {
+            use super::*;
+
+            mod save_the_process {
+                use crate::domain::model::model::BlockSchema;
+
+                use super::*;
+
+                struct MockSaveTheProcess;
+                #[async_trait]
+                impl SaveProcessSchema for MockSaveTheProcess {
+                    async fn save_process(&self, process_schema: ProcessSchema) -> Result<(), CuErrors> {
+                        let query = AoProcess::create_save_process_query(&process_schema);
+
+                        let (
+                            id,
+                            signature,
+                            data,
+                            anchor,
+                            owner,
+                            tags,
+                            block
+                        ) = query.parameters;
+                        assert!(id == "process-123");
+                        assert!(signature == "sig-123");
+                        assert!(data == "data-123");
+                        assert!(anchor == "");
+                        assert!(owner == "woohoo");
+                        let _tags: Vec<RawTagSchema> = serde_json::from_str(&tags).unwrap();
+                        assert!(_tags[0].name == "foo");
+                        assert!(_tags[0].value == "bar");
+                        let _block: BlockSchema = serde_json::from_str(&block).unwrap();
+                        assert!(_block.height == 123);
+                        assert!(_block.timestamp == *NOW);
+
+                        Ok(())
+                    }
+                }
+
+                #[tokio::test]
+                async fn test_save_the_process() {
+                    let mock = MockSaveTheProcess;
+                    match mock.save_process(
+                        ProcessSchema {
+                            id: "process-123".to_string(),
+                            owner: "woohoo".to_string(),
+                            signature: Some("sig-123".to_string()),
+                            anchor: None,
+                            data: "data-123".to_string(),
+                            tags: vec![RawTagSchema { name: "foo".to_string(), value: "bar".to_string() }],
+                            block: BlockSchema {
+                              height: 123,
+                              timestamp: *NOW
+                            }
+                        }
+                    ).await {
+                        Ok(_) => (),
+                        Err(e) => panic!("{}", e)
+                    }
+                }
+            }
+
+            mod noop_if_the_process_already_exists {
+                use crate::domain::model::model::BlockSchema;
+
+                use super::*;
+
+                struct NoopIfTheProcessExists;
+                #[async_trait]
+                impl SaveProcessSchema for NoopIfTheProcessExists {
+                    async fn save_process(&self, process_schema: ProcessSchema) -> Result<(), CuErrors> {
+                        let query = AoProcess::create_save_process_query(&process_schema);
+
+                        assert!(query.sql.trim().starts_with("INSERT OR IGNORE"));
+
+                        Ok(())
+                    }
+                }
+
+                #[tokio::test]
+                async fn test_noop_if_the_process_already_exists() {
+                    let mock = NoopIfTheProcessExists;
+                    match mock.save_process(
+                        ProcessSchema {
+                            id: "process-123".to_string(),
+                            owner: "woohoo".to_string(),
+                            signature: Some("sig-123".to_string()),
+                            anchor: None,
+                            data: "data-123".to_string(),
+                            tags: vec![RawTagSchema { name: "foo".to_string(), value: "bar".to_string() }],
+                            block: BlockSchema {
+                              height: 123,
+                              timestamp: *NOW
+                            }
+                        }
+                    ).await {
+                        Ok(_) => (),
+                        Err(e) => panic!("{}", e)
                     }
                 }
             }
