@@ -25,6 +25,7 @@ pub fn parse_wallet_schema(val: Option<String>) -> Result<String, ValidationErro
 }
 
 pub fn parse_min_char_one_schema(val: Option<String>, field_name: &str) -> Result<String, ValidationError> {
+    println!("parse_min_char_one_schema val: {:?}, field: {:?}", val, field_name);
     if let None = val {
         return option_validation_result(val.validate(field_name.to_string(), &NotEmpty).result());
     }

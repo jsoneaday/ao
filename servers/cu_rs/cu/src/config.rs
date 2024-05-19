@@ -257,7 +257,12 @@ fn get_start_config_env(is_development: bool) -> StartConfigEnv {
                 )
                 .or(Some(get_ms_from_hour(24).to_string())),
             PROCESS_MEMORY_CACHE_FILE_DIR: env::var("PROCESS_MEMORY_CACHE_FILE_DIR")
-                .ok()                
+                .ok()
+                .and_then(|p| {
+                    p.is_empty()
+                        .then_some("".to_string())
+                        .or(Some(p.to_string()))
+                })
                 .or(None),
             PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL: env::var("PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL")
                 .ok()
@@ -527,7 +532,12 @@ fn get_start_config_env(is_development: bool) -> StartConfigEnv {
                 )
                 .or(Some(get_ms_from_hour(24).to_string())),
             PROCESS_MEMORY_CACHE_FILE_DIR: env::var("PROCESS_MEMORY_CACHE_FILE_DIR")
-                .ok()                
+                .ok()
+                .and_then(|p| {
+                    p.is_empty()
+                        .then_some("".to_string())
+                        .or(Some(p.to_string()))
+                })
                 .or(None),
             PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL: env::var("PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL")
                 .ok()

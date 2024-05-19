@@ -1,4 +1,4 @@
-use valid::{constraint::{CharCount, NotEmpty, INVALID_CHAR_COUNT_MIN, INVALID_DIGITS_INTEGER}, invalid_value, ConstraintViolation, State, Validate, Validation, ValidationError};
+use valid::{constraint::{CharCount, NotEmpty, INVALID_CHAR_COUNT_MIN, INVALID_DIGITS_INTEGER, INVALID_LENGTH_MIN}, invalid_value, ConstraintViolation, State, Validate, Validation, ValidationError};
 use crate::config::StartConfigEnv;
 use super::{
     parse_schema::StartSchemaParser, 
@@ -188,59 +188,49 @@ impl StartDomainConfigSchema {
 impl StartSchemaParser<DomainConfigSchema> for StartDomainConfigSchema {
     #[allow(non_snake_case)]
     fn parse(&self) -> Result<DomainConfigSchema, ValidationError> {
+        println!("Start parse");
         let mut final_domain_config_schema = DomainConfigSchema::default();
 
         match parse_positive_int_schema(self.PROCESS_WASM_MEMORY_MAX_LIMIT.clone(), "PROCESS_WASM_MEMORY_MAX_LIMIT") {
             Ok(val) => final_domain_config_schema.PROCESS_WASM_MEMORY_MAX_LIMIT = val,
             Err(e) => return Err(e)
-        };
-        
+        };        
         match parse_positive_int_schema(self.PROCESS_WASM_COMPUTE_MAX_LIMIT.clone(), "PROCESS_WASM_COMPUTE_MAX_LIMIT") {
             Ok(val) => final_domain_config_schema.PROCESS_WASM_COMPUTE_MAX_LIMIT = val,
             Err(e) => return Err(e)
-        };
-        
+        };        
         match parse_url_parse_schema(self.GRAPHQL_URL.clone(), "GRAPHQL_URL") {
             Ok(val) => final_domain_config_schema.GRAPHQL_URL = val,
             Err(e) => return Err(e)
         };
-
         match parse_url_parse_schema(self.CHECKPOINT_GRAPHQL_URL.clone(), "CHECKPOINT_GRAPHQL_URL") {
             Ok(val) => final_domain_config_schema.CHECKPOINT_GRAPHQL_URL = val,
             Err(e) => return Err(e)
-        };
-        
+        };        
         match parse_url_parse_schema(self.UPLOADER_URL.clone(), "UPLOADER_URL") {
             Ok(val) => final_domain_config_schema.UPLOADER_URL = val,
             Err(e) => return Err(e)
-        };
-        
+        };        
         match parse_url_parse_schema(self.ARWEAVE_URL.clone(), "ARWEAVE_URL") {
             Ok(val) => final_domain_config_schema.ARWEAVE_URL = val,
             Err(e) => return Err(e)
         };
-        
         match parse_db_url_schema(self.DB_URL.clone(), "DB_URL") {
             Ok(val) => final_domain_config_schema.DB_URL = val,
             Err(e) => return Err(e)
-        };       
-        
-        
+        };   
         match parse_wallet_schema(self.WALLET.clone()) {
             Ok(val) => final_domain_config_schema.WALLET = val,
             Err(e) => return Err(e)
         };
-
         match parse_positive_int_schema(self.MEM_MONITOR_INTERVAL.clone(), "MEM_MONITOR_INTERVAL") {
             Ok(val) => final_domain_config_schema.MEM_MONITOR_INTERVAL = val,
             Err(e) => return Err(e)
-        };
-        
+        };        
         match parse_positive_int_schema(self.PROCESS_CHECKPOINT_CREATION_THROTTLE.clone(), "PROCESS_CHECKPOINT_CREATION_THROTTLE") {
             Ok(val) => final_domain_config_schema.PROCESS_CHECKPOINT_CREATION_THROTTLE = val,
             Err(e) => return Err(e)
-        };
-        
+        };        
         match parse_boolean_schema(self.DISABLE_PROCESS_CHECKPOINT_CREATION.clone()) {
             Ok(val) => final_domain_config_schema.DISABLE_PROCESS_CHECKPOINT_CREATION = val,
             Err(e) => return Err(e)
@@ -284,6 +274,14 @@ impl StartSchemaParser<DomainConfigSchema> for StartDomainConfigSchema {
             Ok(val) => final_domain_config_schema.PROCESS_MEMORY_CACHE_TTL = val,
             Err(e) => return Err(e)
         };
+        match parse_positive_int_schema(self.PROCESS_MEMORY_CACHE_DRAIN_TO_FILE_THRESHOLD.clone(), "PROCESS_MEMORY_CACHE_DRAIN_TO_FILE_THRESHOLD") {
+            Ok(val) => final_domain_config_schema.PROCESS_MEMORY_CACHE_DRAIN_TO_FILE_THRESHOLD = val,
+            Err(e) => return Err(e)
+        };
+        match parse_min_char_one_schema(self.PROCESS_MEMORY_CACHE_FILE_DIR.clone(), "PROCESS_MEMORY_CACHE_FILE_DIR") {
+            Ok(val) => final_domain_config_schema.PROCESS_MEMORY_CACHE_FILE_DIR = val,
+            Err(e) => return Err(e)
+        };
         match parse_positive_int_schema(self.PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL.clone(), "PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL") {
             Ok(val) => final_domain_config_schema.PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL = val,
             Err(e) => return Err(e)
@@ -315,6 +313,7 @@ pub struct StartDomainConfigSchemaState;
 
 impl<'a> Validate<StartDomainConfigSchemaConstraint, State<&'a StartDomainConfigSchemaState>> for StartDomainConfigSchema {
     fn validate(self, _context: impl Into<State<&'a StartDomainConfigSchemaState>>, _constraint: &StartDomainConfigSchemaConstraint) -> Validation<StartDomainConfigSchemaConstraint, Self> {
+        println!("Start validate");
         let mut violations: Vec<ConstraintViolation> = vec![];
 
         if self.clone().PROCESS_WASM_MEMORY_MAX_LIMIT.validate("PROCESS_WASM_MEMORY_MAX_LIMIT", &PositiveIntSchemaConstraint).result().is_err() {
@@ -384,9 +383,16 @@ impl<'a> Validate<StartDomainConfigSchemaConstraint, State<&'a StartDomainConfig
         if self.clone().PROCESS_MEMORY_CACHE_DRAIN_TO_FILE_THRESHOLD.validate("PROCESS_MEMORY_CACHE_DRAIN_TO_FILE_THRESHOLD", &PositiveIntSchemaConstraint).result().is_err() {
             violations.push(invalid_value(INVALID_DIGITS_INTEGER, "PROCESS_MEMORY_CACHE_DRAIN_TO_FILE_THRESHOLD", "".to_string(), "".to_string()));
         }
-        if self.clone().PROCESS_MEMORY_CACHE_FILE_DIR.validate("PROCESS_MEMORY_CACHE_FILE_DIR", &NotEmpty).result().is_err()
+        println!(
+            "self.PROCESS_MEMORY_CACHE_FILE_DIR.clone() {}", 
+            self.PROCESS_MEMORY_CACHE_FILE_DIR.clone()
+            .is_none()
+            .then_some("".to_string())
+            .or(self.PROCESS_MEMORY_CACHE_FILE_DIR.clone()).unwrap()
+        );
+        if self.PROCESS_MEMORY_CACHE_FILE_DIR.clone().validate("PROCESS_MEMORY_CACHE_FILE_DIR", &NotEmpty).result().is_err()
             || self.clone().PROCESS_MEMORY_CACHE_FILE_DIR.unwrap().validate("PROCESS_MEMORY_CACHE_FILE_DIR", &CharCount::Min(1)).result().is_err() {
-            violations.push(invalid_value(INVALID_WALLET, "PROCESS_MEMORY_CACHE_FILE_DIR", "".to_string(), "".to_string()));
+            violations.push(invalid_value(INVALID_LENGTH_MIN, "PROCESS_MEMORY_CACHE_FILE_DIR", "".to_string(), "".to_string()));
         }
         if self.clone().PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL.validate("PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL", &PositiveIntSchemaConstraint).result().is_err() {
             violations.push(invalid_value(INVALID_DIGITS_INTEGER, "PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL", "".to_string(), "".to_string()));
