@@ -243,6 +243,22 @@ fn get_start_config_env(is_development: bool) -> StartConfigEnv {
                         )
                 )
                 .or(Some(get_ms_from_hour(24).to_string())),
+            PROCESS_MEMORY_CACHE_DRAIN_TO_FILE_THRESHOLD: env::var("PROCESS_MEMORY_CACHE_DRAIN_TO_FILE_THRESHOLD")
+                .ok()
+                .and_then(|ec| 
+                    ec.is_empty()
+                        .then_some(get_ms_from_hour(24).to_string())
+                        .or(
+                            ec.parse::<i64>()
+                                .ok()
+                                .and_then(|val| Some(val.to_string()))
+                                .or(Some(get_ms_from_hour(24).to_string()))
+                        )
+                )
+                .or(Some(get_ms_from_hour(24).to_string())),
+            PROCESS_MEMORY_CACHE_FILE_DIR: env::var("PROCESS_MEMORY_CACHE_FILE_DIR")
+                .ok()                
+                .or(None),
             PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL: env::var("PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL")
                 .ok()
                 .and_then(|ec| 
@@ -497,6 +513,22 @@ fn get_start_config_env(is_development: bool) -> StartConfigEnv {
                         )
                 )
                 .or(Some(get_ms_from_hour(24).to_string())),
+            PROCESS_MEMORY_CACHE_DRAIN_TO_FILE_THRESHOLD: env::var("PROCESS_MEMORY_CACHE_DRAIN_TO_FILE_THRESHOLD")
+                .ok()
+                .and_then(|ec| 
+                    ec.is_empty()
+                        .then_some(get_ms_from_hour(24).to_string())
+                        .or(
+                            ec.parse::<i64>()
+                                .ok()
+                                .and_then(|val| Some(val.to_string()))
+                                .or(Some(get_ms_from_hour(24).to_string()))
+                        )
+                )
+                .or(Some(get_ms_from_hour(24).to_string())),
+            PROCESS_MEMORY_CACHE_FILE_DIR: env::var("PROCESS_MEMORY_CACHE_FILE_DIR")
+                .ok()                
+                .or(None),
             PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL: env::var("PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL")
                 .ok()
                 .and_then(|ec| 
@@ -581,6 +613,8 @@ pub struct StartConfigEnv {
     pub PROCESS_CHECKPOINT_FILE_DIRECTORY: Option<String>, // process.env.PROCESS_CHECKPOINT_FILE_DIRECTORY || tmpdir(),
     pub PROCESS_MEMORY_CACHE_MAX_SIZE: Option<String>, // process.env.PROCESS_MEMORY_CACHE_MAX_SIZE || 500_000_000, // 500MB
     pub PROCESS_MEMORY_CACHE_TTL: Option<String>, // process.env.PROCESS_MEMORY_CACHE_TTL || ms('24h'),
+    pub PROCESS_MEMORY_CACHE_DRAIN_TO_FILE_THRESHOLD: Option<String>,
+    pub PROCESS_MEMORY_CACHE_FILE_DIR: Option<String>,
     pub PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL: Option<String>,
     pub BUSY_THRESHOLD: Option<String>, // process.env.BUSY_THRESHOLD || 0 // disabled
     pub RESTRICT_PROCESSES: Option<String>,
@@ -615,6 +649,8 @@ pub struct ConfigEnv {
     pub PROCESS_CHECKPOINT_FILE_DIRECTORY: String, // process.env.PROCESS_CHECKPOINT_FILE_DIRECTORY || tmpdir(),
     pub PROCESS_MEMORY_CACHE_MAX_SIZE: i64, // process.env.PROCESS_MEMORY_CACHE_MAX_SIZE || 500_000_000, // 500MB
     pub PROCESS_MEMORY_CACHE_TTL: i64, // process.env.PROCESS_MEMORY_CACHE_TTL || ms('24h'),
+    pub PROCESS_MEMORY_CACHE_DRAIN_TO_FILE_THRESHOLD: i64,
+    pub PROCESS_MEMORY_CACHE_FILE_DIR: String,
     pub PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL: i64, 
     pub BUSY_THRESHOLD: i64, // process.env.BUSY_THRESHOLD || 0 // disabled
     pub RESTRICT_PROCESSES: Vec<String>,
@@ -649,6 +685,8 @@ impl ConfigEnv {
             PROCESS_CHECKPOINT_FILE_DIRECTORY: final_server_config.base.PROCESS_CHECKPOINT_FILE_DIRECTORY,
             PROCESS_MEMORY_CACHE_MAX_SIZE: final_server_config.base.PROCESS_MEMORY_CACHE_MAX_SIZE,
             PROCESS_MEMORY_CACHE_TTL: final_server_config.base.PROCESS_MEMORY_CACHE_TTL,
+            PROCESS_MEMORY_CACHE_DRAIN_TO_FILE_THRESHOLD: final_server_config.base.PROCESS_MEMORY_CACHE_DRAIN_TO_FILE_THRESHOLD,
+            PROCESS_MEMORY_CACHE_FILE_DIR: final_server_config.base.PROCESS_MEMORY_CACHE_FILE_DIR,
             PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL: final_server_config.base.PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL,
             BUSY_THRESHOLD: final_server_config.base.BUSY_THRESHOLD,
             RESTRICT_PROCESSES: final_server_config.base.RESTRICT_PROCESSES,
@@ -685,6 +723,8 @@ impl Default for ConfigEnv {
             PROCESS_CHECKPOINT_FILE_DIRECTORY: "".to_string(),
             PROCESS_MEMORY_CACHE_MAX_SIZE: 0,
             PROCESS_MEMORY_CACHE_TTL: 0,
+            PROCESS_MEMORY_CACHE_DRAIN_TO_FILE_THRESHOLD: 0,
+            PROCESS_MEMORY_CACHE_FILE_DIR: "".to_string(),
             PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL: 0,
             BUSY_THRESHOLD: 0,
             RESTRICT_PROCESSES: vec![],

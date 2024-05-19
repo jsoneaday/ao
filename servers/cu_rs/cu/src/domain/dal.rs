@@ -26,12 +26,12 @@ pub trait LoadBlocksMetaSchema {
 
 #[async_trait]
 pub trait FindProcessSchema {
-    async fn find_process_schema(process_id: String) -> ProcessSchema;
+    async fn find_process(&self, process_id: &str) -> Result<ProcessSchema, CuErrors>;
 }
 
 #[async_trait]
 pub trait SaveProcessSchema {
-    async fn save_process_schema(process_schema: ProcessSchema) -> Vec<u8>;
+    async fn save_process(&self, process_schema: ProcessSchema) -> Result<(), CuErrors>;
 }
 
 #[async_trait]

@@ -1,7 +1,8 @@
 use std::fmt::Display;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
-use sqlx::prelude::FromRow;
+use sqlx::prelude::{Row,FromRow};
+use sqlx::sqlite::SqliteRow;
 use valid::ValidationError;
 use once_cell::sync::OnceCell;
 use validator::Validate;
@@ -45,6 +46,17 @@ pub struct RawTagSchema {
     pub value: String
 }
 
+impl<'r> FromRow<'r, SqliteRow> for RawTagSchema {
+    fn from_row(row: &'r SqliteRow) -> Result<Self, sqlx::Error> {
+        Ok(
+            RawTagSchema { 
+                name: row.try_get("name")?, 
+                value: row.try_get("value")?
+            }
+        )
+    }
+}
+
 #[derive(Clone)]
 #[allow(unused)]
 pub struct Owner {
@@ -63,7 +75,7 @@ pub struct ModuleSchema {
     pub owner: String
 }
 
-#[derive(FromRow)]
+#[derive(FromRow, Clone, Deserialize, Serialize)]
 pub struct BlockSchema {
     pub height: i64,
     pub timestamp: i64
@@ -85,18 +97,19 @@ pub struct MessageBeforeSchema {
     pub seq: String
 }
 
-#[derive(Validate)]
+#[derive(Validate, Clone)]
 #[allow(unused)]
 pub struct ProcessSchema {
     #[validate(length(min = 1))]
-    id: String,
-    signature: Option<String>,
-    data: Option<Vec<u8>>,
-    anchor: Option<String>,
+    pub id: String,
+    pub signature: Option<String>,
+    // todo: this might be an Any
+    pub data: String,
+    pub anchor: Option<String>,
     #[validate(length(min = 1))]
-    owner: String,
-    tags: Vec<RawTagSchema>,
-    block: BlockSchema
+    pub owner: String,
+    pub tags: Vec<RawTagSchema>,
+    pub block: BlockSchema
 }
 
 #[allow(unused)]

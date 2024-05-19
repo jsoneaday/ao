@@ -117,6 +117,18 @@ pub struct StartDomainConfigSchema {
     */
     pub PROCESS_MEMORY_CACHE_TTL: Option<String>,
     /**
+    * The time in milliseconds that a process' Memory should remain in the heap,
+    * as part of the cache entry, before being drained to a file.
+    *
+    * This helps free up memory from processes who've been evalated and cached,
+    * but have not been accessed recently
+    */
+    pub PROCESS_MEMORY_CACHE_DRAIN_TO_FILE_THRESHOLD: Option<String>,
+    /**
+    * The directory to store drained process memory files
+    */
+    pub PROCESS_MEMORY_CACHE_FILE_DIR: Option<String>,
+    /**
      * The interval at which the CU should Checkpoint all processes stored in it's
      * cache.
      *
@@ -163,6 +175,8 @@ impl StartDomainConfigSchema {
             PROCESS_CHECKPOINT_FILE_DIRECTORY: start_config_env.PROCESS_CHECKPOINT_FILE_DIRECTORY,
             PROCESS_MEMORY_CACHE_MAX_SIZE: start_config_env.PROCESS_MEMORY_CACHE_MAX_SIZE,
             PROCESS_MEMORY_CACHE_TTL: start_config_env.PROCESS_MEMORY_CACHE_TTL,
+            PROCESS_MEMORY_CACHE_DRAIN_TO_FILE_THRESHOLD: start_config_env.PROCESS_MEMORY_CACHE_DRAIN_TO_FILE_THRESHOLD,
+            PROCESS_MEMORY_CACHE_FILE_DIR: start_config_env.PROCESS_MEMORY_CACHE_FILE_DIR,
             PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL: start_config_env.PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL,
             BUSY_THRESHOLD: start_config_env.BUSY_THRESHOLD,
             RESTRICT_PROCESSES: start_config_env.RESTRICT_PROCESSES,
@@ -300,7 +314,6 @@ pub struct StartDomainConfigSchemaConstraint;
 pub struct StartDomainConfigSchemaState;
 
 impl<'a> Validate<StartDomainConfigSchemaConstraint, State<&'a StartDomainConfigSchemaState>> for StartDomainConfigSchema {
-    // todo: finish
     fn validate(self, _context: impl Into<State<&'a StartDomainConfigSchemaState>>, _constraint: &StartDomainConfigSchemaConstraint) -> Validation<StartDomainConfigSchemaConstraint, Self> {
         let mut violations: Vec<ConstraintViolation> = vec![];
 
@@ -367,6 +380,13 @@ impl<'a> Validate<StartDomainConfigSchemaConstraint, State<&'a StartDomainConfig
         }
         if self.clone().PROCESS_MEMORY_CACHE_TTL.validate("PROCESS_MEMORY_CACHE_TTL", &PositiveIntSchemaConstraint).result().is_err() {
             violations.push(invalid_value(INVALID_DIGITS_INTEGER, "PROCESS_MEMORY_CACHE_TTL", "".to_string(), "".to_string()));
+        }
+        if self.clone().PROCESS_MEMORY_CACHE_DRAIN_TO_FILE_THRESHOLD.validate("PROCESS_MEMORY_CACHE_DRAIN_TO_FILE_THRESHOLD", &PositiveIntSchemaConstraint).result().is_err() {
+            violations.push(invalid_value(INVALID_DIGITS_INTEGER, "PROCESS_MEMORY_CACHE_DRAIN_TO_FILE_THRESHOLD", "".to_string(), "".to_string()));
+        }
+        if self.clone().PROCESS_MEMORY_CACHE_FILE_DIR.validate("PROCESS_MEMORY_CACHE_FILE_DIR", &NotEmpty).result().is_err()
+            || self.clone().PROCESS_MEMORY_CACHE_FILE_DIR.unwrap().validate("PROCESS_MEMORY_CACHE_FILE_DIR", &CharCount::Min(1)).result().is_err() {
+            violations.push(invalid_value(INVALID_WALLET, "PROCESS_MEMORY_CACHE_FILE_DIR", "".to_string(), "".to_string()));
         }
         if self.clone().PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL.validate("PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL", &PositiveIntSchemaConstraint).result().is_err() {
             violations.push(invalid_value(INVALID_DIGITS_INTEGER, "PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL", "".to_string(), "".to_string()));
@@ -493,6 +513,18 @@ pub struct DomainConfigSchema {
     */
     pub PROCESS_MEMORY_CACHE_TTL: i64,
     /**
+     * The time in milliseconds that a process' Memory should remain in the heap,
+     * as part of the cache entry, before being drained to a file.
+     *
+     * This helps free up memory from processes who've been evalated and cached,
+     * but have not been accessed recently
+     */
+    pub PROCESS_MEMORY_CACHE_DRAIN_TO_FILE_THRESHOLD: i64,
+    /**
+     * The directory to store drained process memory files
+     */
+    pub PROCESS_MEMORY_CACHE_FILE_DIR: String,
+    /**
      * The interval at which the CU should Checkpoint all processes stored in it's
      * cache.
      *
@@ -539,6 +571,8 @@ impl Default for DomainConfigSchema {
             PROCESS_CHECKPOINT_FILE_DIRECTORY: "".to_string(),
             PROCESS_MEMORY_CACHE_MAX_SIZE: 0,
             PROCESS_MEMORY_CACHE_TTL: 0,
+            PROCESS_MEMORY_CACHE_DRAIN_TO_FILE_THRESHOLD: 0,
+            PROCESS_MEMORY_CACHE_FILE_DIR: "".to_string(),
             PROCESS_MEMORY_CACHE_CHECKPOINT_INTERVAL: 0,
             BUSY_THRESHOLD: 0,
             RESTRICT_PROCESSES: vec![],
