@@ -75,7 +75,7 @@ pub struct ModuleSchema {
     pub owner: String
 }
 
-#[derive(FromRow, Clone, Deserialize, Serialize)]
+#[derive(FromRow, Clone, Debug, Deserialize, Serialize)]
 pub struct BlockSchema {
     pub height: i64,
     pub timestamp: i64
@@ -97,7 +97,7 @@ pub struct MessageBeforeSchema {
     pub seq: String
 }
 
-#[derive(Validate, Clone)]
+#[derive(Validate, Clone, Debug)]
 #[allow(unused)]
 pub struct ProcessSchema {
     #[validate(length(min = 1))]
